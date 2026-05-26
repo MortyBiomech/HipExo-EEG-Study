@@ -10,8 +10,8 @@ Please read it carefully before making any changes to the codebase.
 ### 1.1 Clone the repository
 
 ```bash
-git clone https://github.com/YourOrg/exo-eeg-pipeline.git
-cd exo-eeg-pipeline
+git clone https://github.com/MortyBiomech/HipExo-EEG-Study.git
+cd HipExo-EEG-Study
 ```
 
 ### 1.2 Set up your local config
