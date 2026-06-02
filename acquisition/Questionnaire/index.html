@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Exoskeleton Study Questionnaire</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+  <style>
+    :root {
+      --bg-primary: #ffffff;
+      --bg-secondary: #f9fafb;
+      --bg-tertiary: #f3f4f6;
+      --text-primary: #111827;
+      --text-secondary: #6b7280;
+      --text-tertiary: #9ca3af;
+      --border-subtle: rgba(0,0,0,0.12);
+      --border-medium: rgba(0,0,0,0.22);
+      --radius-md: 8px;
+      --radius-lg: 12px;
+      --accent: #2563eb;
+      --accent-light: #eff6ff;
+      --accent-border: #bfdbfe;
+      --accent-dark: #1e40af;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      padding: 16px;
+      min-height: 100vh;
+    }
+    input[type=text], input[type=date], input[type=number], select {
+      border: 0.5px solid var(--border-medium);
+      border-radius: var(--radius-md);
+      padding: 5px 9px;
+      font-size: 13px;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      outline: none;
+      font-family: inherit;
+    }
+    input[type=text]:focus, input[type=date]:focus, select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(37,99,235,0.15);
+    }
+    input[type=radio] { accent-color: var(--accent); width: 14px; height: 14px; }
+    .tab-btn {
+      padding: 10px 18px; border: none; cursor: pointer; font-size: 13px;
+      font-weight: 500; background: transparent; color: var(--text-secondary);
+      border-bottom: 2px solid transparent; transition: all .15s; white-space: nowrap;
+      font-family: inherit;
+    }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .sec-h {
+      font-size: 15px; font-weight: 500; color: var(--accent-dark);
+      margin: 20px 0 12px; padding-bottom: 7px;
+      border-bottom: 1.5px solid var(--accent-border);
+    }
+    .q-block {
+      margin-bottom: 12px; padding: 11px 13px;
+      background: var(--bg-secondary); border-radius: var(--radius-md);
+      border: 0.5px solid var(--border-subtle);
+    }
+    .q-label { font-size: 13px; line-height: 1.55; color: var(--text-primary); margin-bottom: 8px; }
+    .radio-row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .radio-row label { display: flex; gap: 5px; align-items: center; font-size: 13px; cursor: pointer; }
+    .lik-row { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; margin-top: 2px; }
+    .lik-btn {
+      width: 29px; height: 29px; border-radius: 5px; font-size: 12px;
+      font-weight: 500; cursor: pointer; border: 0.5px solid var(--border-medium);
+      background: var(--bg-primary); color: var(--text-primary);
+      transition: all .1s; font-family: inherit;
+    }
+    .lik-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .lik-btn.sel { border: 2px solid var(--accent); background: var(--accent); color: #fff; }
+    .lik-lbl { font-size: 11px; color: var(--text-tertiary); max-width: 80px; line-height: 1.2; }
+    .note { font-size: 11px; color: var(--text-tertiary); margin-bottom: 12px; margin-top: -6px; }
+    .pill-btn {
+      padding: 4px 11px; border-radius: 16px;
+      border: 0.5px solid var(--border-medium);
+      background: var(--bg-primary); color: var(--text-secondary);
+      cursor: pointer; font-size: 12px; transition: all .15s; font-family: inherit;
+    }
+    .pill-btn.sel { border-color: var(--accent); background: var(--accent-light); color: var(--accent); font-weight: 500; }
+    .pill-btn.add { border-style: dashed; color: var(--text-tertiary); }
+    .cond-box {
+      margin-bottom: 16px; padding: 11px 13px;
+      background: var(--accent-light); border-radius: var(--radius-md);
+      border: 0.5px solid var(--accent-border);
+    }
+    .footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; align-items: center; }
+    .btn-save {
+      padding: 8px 16px; background: var(--bg-primary);
+      border: 0.5px solid var(--border-medium); border-radius: var(--radius-md);
+      cursor: pointer; font-size: 13px; font-weight: 500; color: var(--text-primary);
+      font-family: inherit;
+    }
+    .btn-save:hover { background: var(--bg-secondary); }
+    .btn-export {
+      padding: 8px 16px; background: var(--accent); color: #fff;
+      border: none; border-radius: var(--radius-md);
+      cursor: pointer; font-size: 13px; font-weight: 500; font-family: inherit;
+    }
+    .btn-export:hover { background: #1d4ed8; }
+    .btn-new {
+      padding: 8px 16px; background: #dc2626; color: #fff;
+      border: none; border-radius: var(--radius-md);
+      cursor: pointer; font-size: 13px; font-weight: 500; font-family: inherit;
+    }
+    .btn-new:hover { background: #b91c1c; }
+    .notice { font-size: 12px; color: #16a34a; font-weight: 500; }
+    .card {
+      background: var(--bg-primary); border-radius: var(--radius-lg);
+      border: 0.5px solid var(--border-subtle); padding: 16px 20px; margin-bottom: 14px;
+    }
+    .grid2 { display: flex; gap: 14px; flex-wrap: wrap; }
+    .field-lbl { font-size: 11px; color: var(--text-secondary); display: block; margin-bottom: 3px; font-weight: 500; }
+    .scroll-area { max-height: 60vh; overflow-y: auto; padding: 18px; }
+    .modal-overlay {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.4); display: flex;
+      align-items: center; justify-content: center; z-index: 1000;
+    }
+    .modal {
+      background: var(--bg-primary); border-radius: var(--radius-lg);
+      padding: 24px; max-width: 360px; width: 90%; box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+    }
+    .modal h3 { font-size: 15px; font-weight: 500; margin-bottom: 10px; }
+    .modal p { font-size: 13px; color: var(--text-secondary); margin-bottom: 18px; line-height: 1.5; }
+    .modal-btns { display: flex; gap: 10px; justify-content: flex-end; }
+    .progress-bar-wrap {
+      height: 3px; background: var(--bg-tertiary); border-radius: 2px; margin-bottom: 14px;
+    }
+    .progress-bar { height: 3px; background: var(--accent); border-radius: 2px; transition: width .3s; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+const CONDITIONS = ['No-exo-pre','No-exo-post','exo-1','exo-2','exo-3','exo-4','exo-5','exo-6'];
+const RANK_CONDITIONS = ['exo-1','exo-2','exo-3','exo-4','exo-5','exo-6'];
+const STORAGE_KEY = 'exo_questionnaire_v1';
+
+const state = {
+  tab: 'A', showResetModal: false,
+  meta: { id:'', date: new Date().toISOString().slice(0,10), env:'' },
+  a1: { age:'',ageOk:'',foot:'',height:'',weight:'',leg:'',injuries:'',injDesc:'',falls:'',fallsN:'',fallsDesc:'',neuro:'',neuroDesc:'',skin:'',skinDesc:'',meds:'',medsDesc:'',exoExp:'',exoDev:'',activity:'',sleep:'',caffeine:'',cafAmt:'',okWalk:'',okDevice:'',consent:'' },
+  a2: { fatigue:null,lowerBack:null,hipD:null,hipN:null,thighD:null,kneeD:null,ankleD:null,pelvis:null,other:null },
+  a3: Array(6).fill(null),
+  bList: [mkB()],
+  bIdx: 0,
+  c1: { rank: Array(6).fill(''), best:'', worst:'' },
+  c2: Array(5).fill(null),
+  notice: ''
+};
+
+function mkB(cond='') {
+  return { condition:cond, b1:Array(12).fill(null), b2:Array(6).fill(null), b3:Array(6).fill(null), b4:Array(5).fill(null), b5:Array(6).fill(null) };
+}
+
+function loadSaved() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) { const d = JSON.parse(raw); Object.assign(state, d); }
+  } catch(_) {}
+}
+
+function saveAll() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    state.notice = 'Saved ✓';
+    render();
+    setTimeout(() => { state.notice = ''; render(); }, 2000);
+  } catch(_) { state.notice = 'Save failed'; render(); }
+}
+
+function resetParticipant() {
+  state.meta = { id:'', date: new Date().toISOString().slice(0,10), env:'' };
+  state.a1 = { age:'',ageOk:'',foot:'',height:'',weight:'',leg:'',injuries:'',injDesc:'',falls:'',fallsN:'',fallsDesc:'',neuro:'',neuroDesc:'',skin:'',skinDesc:'',meds:'',medsDesc:'',exoExp:'',exoDev:'',activity:'',sleep:'',caffeine:'',cafAmt:'',okWalk:'',okDevice:'',consent:'' };
+  state.a2 = { fatigue:null,lowerBack:null,hipD:null,hipN:null,thighD:null,kneeD:null,ankleD:null,pelvis:null,other:null };
+  state.a3 = Array(6).fill(null);
+  state.bList = [mkB()];
+  state.bIdx = 0;
+  state.c1 = { rank: Array(6).fill(''), best:'', worst:'' };
+  state.c2 = Array(5).fill(null);
+  state.tab = 'A';
+  state.showResetModal = false;
+  localStorage.removeItem(STORAGE_KEY);
+  render();
+}
+
+function calcProgress() {
+  let filled = 0, total = 0;
+  if (state.tab === 'A') {
+    const a1req = ['ageOk','foot','leg','injuries','falls','neuro','skin','meds','exoExp','activity','okWalk','okDevice','consent'];
+    a1req.forEach(k => { total++; if (state.a1[k]) filled++; });
+    Object.values(state.a2).forEach(v => { total++; if (v !== null) filled++; });
+    state.a3.forEach(v => { total++; if (v !== null) filled++; });
+  } else if (state.tab === 'B') {
+    const b = state.bList[state.bIdx];
+    total++; if (b.condition) filled++;
+    ['b1','b2','b3','b4','b5'].forEach(s => b[s].forEach(v => { total++; if (v !== null) filled++; }));
+  } else {
+    state.c1.rank.forEach(v => { total++; if (v) filled++; });
+    state.c2.forEach(v => { total++; if (v !== null) filled++; });
+  }
+  return Math.round((filled / total) * 100);
+}
+
+function exportCSV() {
+  const rows = state.bList.map(br => ({
+    participant_id: state.meta.id, date: state.meta.date, environment: state.meta.env,
+    ...Object.fromEntries(Object.entries(state.a1).map(([k,v]) => [`a1_${k}`, v ?? ''])),
+    ...Object.fromEntries(Object.entries(state.a2).map(([k,v]) => [`a2_${k}`, v ?? ''])),
+    ...state.a3.reduce((o,v,i) => ({...o,[`a3_q${i+1}`]: v ?? ''}), {}),
+    b_condition: br.condition,
+    ...['b1','b2','b3','b4','b5'].reduce((o,s) => ({...o, ...br[s].reduce((o2,v,i) => ({...o2,[`${s}_q${i+1}`]: v ?? ''}), {})}), {}),
+    c1_1st: state.c1.rank[0], c1_2nd: state.c1.rank[1], c1_3rd: state.c1.rank[2], c1_4th: state.c1.rank[3], c1_5th: state.c1.rank[4], c1_6th: state.c1.rank[5],
+    c1_best_reason: state.c1.best, c1_worst_reason: state.c1.worst,
+    ...state.c2.reduce((o,v,i) => ({...o,[`c2_q${i+1}`]: v ?? ''}), {})
+  }));
+  const hs = Object.keys(rows[0]);
+  const csv = [hs.join(','), ...rows.map(r => hs.map(h => `"${String(r[h] ?? '').replace(/"/g,'""')}"`).join(','))].join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'}));
+  a.download = `study_${state.meta.id || 'participant'}_${state.meta.date}.csv`;
+  a.click();
+}
+
+function likert(val, onchange, min=1, max=7, ll='Strongly disagree', rl='Strongly agree') {
+  const nums = Array.from({length: max - min + 1}, (_,i) => min + i);
+  return `<div class="lik-row">
+    ${ll ? `<span class="lik-lbl">${ll}</span>` : ''}
+    ${nums.map(n => `<button class="lik-btn${val === n ? ' sel' : ''}" onclick="(${onchange})(${n})">${n}</button>`).join('')}
+    ${rl ? `<span class="lik-lbl">${rl}</span>` : ''}
+  </div>`;
+}
+
+function radio(name, options, val, onchange) {
+  return `<div class="radio-row">${options.map(o =>
+    `<label><input type="radio" name="${name}" ${val === o ? 'checked' : ''} onchange="(${onchange})('${o.replace(/'/g, "\\'")}')"> ${o}</label>`
+  ).join('')}</div>`;
+}
+
+function qblock(n, label, inner) {
+  return `<div class="q-block"><p class="q-label">${n ? `<strong>${n}.</strong> ` : ''}${label}</p>${inner}</div>`;
+}
+
+function txtin(val, onchange, ph='', width=170) {
+  return `<input type="text" value="${String(val).replace(/"/g,'&quot;')}" oninput="(${onchange})(this.value)" placeholder="${ph}" style="width:${width}px">`;
+}
+
+function renderA() {
+  const a1 = state.a1, a2 = state.a2, a3 = state.a3;
+  let h = `<p class="sec-h">A1. Eligibility &amp; Safety Screening</p><p class="note">Yes/No unless otherwise specified</p>`;
+
+  h += qblock(1, 'Age ≥ 18 years?', `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    ${txtin(a1.age, 'v=>{state.a1.age=v;render()}', 'Age', 60)}
+    ${radio('a1_ok', ['Yes','No'], a1.ageOk, 'v=>{state.a1.ageOk=v;render()}')}
+  </div>`);
+  h += qblock(2, 'Dominant foot:', radio('a1_foot', ['Right','Left'], a1.foot, 'v=>{state.a1.foot=v;render()}'));
+  h += qblock(3, 'Height (cm) / Weight (kg):', `<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+    <div style="display:flex;gap:5px;align-items:center"><span style="font-size:13px;color:var(--text-secondary)">Height:</span>${txtin(a1.height,'v=>{state.a1.height=v;render()}','cm',60)}</div>
+    <div style="display:flex;gap:5px;align-items:center"><span style="font-size:13px;color:var(--text-secondary)">Weight:</span>${txtin(a1.weight,'v=>{state.a1.weight=v;render()}','kg',60)}</div>
+  </div>`);
+  h += qblock(4, 'Dominant leg:', radio('a1_leg', ['Right','Left','No clear dominance'], a1.leg, 'v=>{state.a1.leg=v;render()}'));
+
+  h += qblock(5, 'Any current or recent (past 6 months) injuries, pain, or surgeries affecting hip, pelvis, thigh, knee, ankle, or foot?',
+    radio('a1_inj', ['No','Yes'], a1.injuries, 'v=>{state.a1.injuries=v;render()}') +
+    (a1.injuries==='Yes' ? `<div style="margin-top:7px"><input type="text" value="${a1.injDesc}" oninput="state.a1.injDesc=this.value;render()" placeholder="Describe..." style="width:100%"></div>` : ''));
+
+  h += qblock(6, 'Have you experienced a fall in the past 12 months?',
+    radio('a1_falls', ['No','Yes'], a1.falls, 'v=>{state.a1.falls=v;render()}') +
+    (a1.falls==='Yes' ? `<div style="margin-top:7px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+      <div style="display:flex;gap:5px;align-items:center"><span style="font-size:13px;color:var(--text-secondary)">Number:</span>${txtin(a1.fallsN,'v=>{state.a1.fallsN=v;render()}','#',55)}</div>
+      <div style="display:flex;gap:5px;align-items:center"><span style="font-size:13px;color:var(--text-secondary)">Description (optional):</span>${txtin(a1.fallsDesc,'v=>{state.a1.fallsDesc=v;render()}','...',180)}</div>
+    </div>` : ''));
+
+  h += qblock(7, 'Any diagnosed neuromuscular, cardiovascular, or balance disorders?',
+    radio('a1_neuro',['No','Yes'],a1.neuro,'v=>{state.a1.neuro=v;render()}') +
+    (a1.neuro==='Yes' ? `<div style="margin-top:7px"><input type="text" value="${a1.neuroDesc}" oninput="state.a1.neuroDesc=this.value;render()" placeholder="Describe..." style="width:100%"></div>` : ''));
+
+  h += qblock(8, 'Any skin conditions or sensitivities at contact areas (waist, pelvis, upper thigh) relevant to wearing a hip exoskeleton?',
+    radio('a1_skin',['No','Yes'],a1.skin,'v=>{state.a1.skin=v;render()}') +
+    (a1.skin==='Yes' ? `<div style="margin-top:7px"><input type="text" value="${a1.skinDesc}" oninput="state.a1.skinDesc=this.value;render()" placeholder="Describe..." style="width:100%"></div>` : ''));
+
+  h += qblock(9, 'Are you currently taking any medication that may affect strength, balance, coordination, or fatigue?',
+    radio('a1_meds',['No','Yes'],a1.meds,'v=>{state.a1.meds=v;render()}') +
+    (a1.meds==='Yes' ? `<div style="margin-top:7px"><input type="text" value="${a1.medsDesc}" oninput="state.a1.medsDesc=this.value;render()" placeholder="Specify..." style="width:100%"></div>` : ''));
+
+  h += qblock(10, 'Prior experience with exoskeletons or wearable robotics?',
+    radio('a1_exo',['None','Limited','Moderate','Extensive'],a1.exoExp,'v=>{state.a1.exoExp=v;render()}') +
+    (a1.exoExp && a1.exoExp!=='None' ? `<div style="margin-top:7px;display:flex;gap:6px;align-items:center"><span style="font-size:13px;color:var(--text-secondary)">Device(s) used:</span>${txtin(a1.exoDev,'v=>{state.a1.exoDev=v;render()}','...',200)}</div>` : ''));
+
+  h += qblock(11, 'Typical weekly moderate-to-vigorous physical activity:',
+    radio('a1_act',['<1 hr','1–3 hrs','3–5 hrs','>5 hrs'],a1.activity,'v=>{state.a1.activity=v;render()}'));
+
+  h += qblock(12, 'Sleep in the last 24 hours / Caffeine in the last 6 hours?', `<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+    <div style="display:flex;gap:5px;align-items:center"><span style="font-size:13px;color:var(--text-secondary)">Sleep (hrs):</span>${txtin(a1.sleep,'v=>{state.a1.sleep=v;render()}','hrs',55)}</div>
+    ${radio('a1_caf',['No caffeine','Yes'],a1.caffeine,'v=>{state.a1.caffeine=v;render()}')}
+    ${a1.caffeine==='Yes' ? `<div style="display:flex;gap:5px;align-items:center"><span style="font-size:13px;color:var(--text-secondary)">Amount:</span>${txtin(a1.cafAmt,'v=>{state.a1.cafAmt=v;render()}','e.g. 1 coffee',130)}</div>` : ''}
+  </div>`);
+
+  h += qblock(13, 'Are you comfortable walking repeatedly or performing assisted walking tasks while wearing a hip exoskeleton today?',
+    radio('a1_okw',['Yes','No'],a1.okWalk,'v=>{state.a1.okWalk=v;render()}'));
+  h += qblock(14, 'Are you comfortable walking while wearing an external device weighing approximately 1–2 kg attached to the waist and thighs?',
+    radio('a1_okd',['Yes','No'],a1.okDevice,'v=>{state.a1.okDevice=v;render()}'));
+  h += qblock(15, 'Do you consent to participate and to wearable sensor placement (EMG, EEG, IMU)?',
+    radio('a1_cons',['Yes','No'],a1.consent,'v=>{state.a1.consent=v;render()}'));
+
+  h += `<p class="sec-h">A2. Baseline Discomfort / Pain / Fatigue</p>`;
+  h += qblock('', 'How fatigued do you feel right now? (0 = No fatigue → 10 = Extreme fatigue)',
+    likert(a2.fatigue,'v=>{state.a2.fatigue=state.a2.fatigue===v?null:v;render()}',0,10,'No fatigue','Extreme fatigue'));
+
+  h += `<div class="q-block"><p class="q-label">Current discomfort per body region (0 = none → 10 = worst imaginable):</p>`;
+  [['lowerBack','Lower back'],['hipD','Hip (dominant)'],['hipN','Hip (non-dominant)'],
+   ['thighD','Thigh (dominant)'],['kneeD','Knee (dominant)'],['ankleD','Ankle/Foot (dominant)'],
+   ['pelvis','Pelvis/Waist'],['other','Other']].forEach(([k,lbl]) => {
+    h += `<div style="display:flex;align-items:center;gap:10px;margin-bottom:9px;flex-wrap:wrap">
+      <span style="font-size:13px;min-width:155px;color:var(--text-secondary)">${lbl}</span>
+      ${likert(a2[k],`v=>{state.a2.${k}=state.a2.${k}===v?null:v;render()}`,0,10,'','')}
+    </div>`;
+  });
+  h += `</div>`;
+
+  h += `<p class="sec-h">A3. Task Familiarity &amp; Expectations</p><p class="note">1 = Strongly disagree → 7 = Strongly agree</p>`;
+  ["I am familiar with walking tasks similar to those used in today's experiment.",
+   "I expect the hip exoskeleton to reduce the physical effort required for walking.",
+   "I am concerned about comfort while wearing the hip exoskeleton during walking.",
+   "I am concerned about safety while walking with the hip exoskeleton.",
+   "I expect the hip exoskeleton to detect or anticipate my walking movements correctly.",
+   "I expect the hip exoskeleton to move in coordination with my natural walking rhythm."
+  ].forEach((q,i) => {
+    h += qblock(i+1, q, likert(a3[i], `v=>{const a=[...state.a3];a[${i}]=a[${i}]===v?null:v;state.a3=a;render()}`));
+  });
+  return h;
+}
+
+function renderB() {
+  const bList = state.bList, bIdx = state.bIdx, b = bList[bIdx];
+  let h = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center">
+    <span style="font-size:12px;font-weight:500;color:var(--text-secondary)">Responses:</span>`;
+  bList.forEach((br,i) => {
+    h += `<button class="pill-btn${i===bIdx?' sel':''}" onclick="state.bIdx=${i};render()">${br.condition||`Condition ${i+1}`}</button>`;
+  });
+  if (bList.length < 8) {
+    h += `<button class="pill-btn add" onclick="const ni=state.bList.length;state.bList.push({condition:'',b1:Array(12).fill(null),b2:Array(6).fill(null),b3:Array(6).fill(null),b4:Array(5).fill(null),b5:Array(6).fill(null)});state.bIdx=ni;render()">+ Add</button>`;
+  }
+  h += `</div>`;
+
+  h += `<div class="cond-box"><p style="font-size:13px;font-weight:500;color:var(--accent-dark);margin-bottom:9px">Select condition for this response:</p>
+    <div class="radio-row">${CONDITIONS.map(c =>
+      `<label><input type="radio" name="cond_${bIdx}" ${b.condition===c?'checked':''} onchange="state.bList[${bIdx}].condition='${c}';render()"> ${c}</label>`
+    ).join('')}</div>
+  </div>`;
+
+  const bqs = (qs, arr, sec, min=1, max=7, ll='Strongly disagree', rl='Strongly agree') => {
+    let out = '';
+    qs.forEach((q,i) => {
+      out += qblock(i+1, q, likert(arr[i], `v=>{const a=[...state.bList[${bIdx}].${sec}];a[${i}]=a[${i}]===v?null:v;state.bList[${bIdx}].${sec}=a;render()}`, min, max, ll, rl));
+    });
+    return out;
+  };
+
+  h += `<p class="sec-h">B1. User Perception</p><p class="note">1 = Strongly disagree → 7 = Strongly agree</p>`;
+  h += bqs(["I felt that my walking movements were caused by my own intention.",
+    "I felt in control of how my legs moved during walking.",
+    "The way my body moved matched what I expected it to do.",
+    "I felt that I was the one generating my walking pattern, not the device.",
+    "I felt as if my walking movements were controlled by another person in the room.",
+    "I felt as if someone else was deciding how I walked.",
+    "My body and the device felt like they were working as a single coordinated system.",
+    "The device felt like a natural extension of my body during walking.",
+    "I stopped noticing the device as a separate object while I was walking.",
+    "The device moved in harmony with my body.",
+    "I felt as if the device had replaced my legs.",
+    "I felt as if I had a second pair of hips."], b.b1, 'b1');
+
+  h += `<p class="sec-h">B2. Perceived Workload</p><p class="note">0 = Very low → 10 = Very high</p>`;
+  h += bqs(["How mentally demanding was the task?",
+    "How physically demanding was the task?",
+    "How hurried or rushed was the pace of the task?",
+    "How successful were you in accomplishing what you were asked to do?",
+    "How hard did you have to work to accomplish your level of performance?",
+    "How insecure, discouraged, irritated, stressed, and annoyed were you?"], b.b2, 'b2', 0, 10, 'Very low', 'Very high');
+
+  h += `<p class="sec-h">B3. Trust in the Device</p><p class="note">1 = Strongly disagree → 7 = Strongly agree</p>`;
+  h += bqs(["I trusted the device to assist my walking safely.",
+    "I felt confident that the device would respond predictably during walking.",
+    "I was worried the device might cause me to stumble or lose balance.",
+    "I felt comfortable relying on the device's support.",
+    "I understood how the device was assisting me.",
+    "I felt that the device was trying to harm me."], b.b3, 'b3');
+
+  h += `<p class="sec-h">B4. Perceived Predictability of Assistance</p><p class="note">1 = Strongly disagree → 7 = Strongly agree</p>`;
+  h += bqs(["I could anticipate when the device would provide assistance during each step.",
+    "The assistance felt synchronized with the timing of my own steps.",
+    "The force of the assistance was what I expected it to be.",
+    "The device's assistance pattern surprised me.",
+    "By the end of the walking period, the device's assistance had become more predictable than at the beginning."], b.b4, 'b4');
+
+  h += `<p class="sec-h">B5. Usability and Comfort</p><p class="note">1 = Strongly disagree → 7 = Strongly agree</p>`;
+  h += bqs(["Walking in this mode felt natural.",
+    "I could easily adapt to walking in this mode.",
+    "This mode felt physically comfortable.",
+    "I felt restricted in my movements in this mode.",
+    "I could see myself using this mode for everyday activities.",
+    "This mode required conscious effort to walk properly."], b.b5, 'b5');
+
+  return h;
+}
+
+function renderC() {
+  let h = `<p class="sec-h">C1. Preference &amp; Ranking</p>`;
+  h += `<div class="q-block"><p class="q-label">Rank the 6 exo conditions from best (1st) to worst (6th) for overall experience:</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">`;
+  ['1st','2nd','3rd','4th','5th','6th'].forEach((pos,i) => {
+    h += `<div style="display:flex;gap:5px;align-items:center">
+      <span style="font-size:12px;color:var(--text-secondary);min-width:26px">${pos}</span>
+      <select onchange="const r=[...state.c1.rank];r[${i}]=this.value;state.c1.rank=r;render()">
+        <option value="">—</option>
+        ${RANK_CONDITIONS.map(c => `<option value="${c}" ${state.c1.rank[i]===c?'selected':''}>${c}</option>`).join('')}
+      </select>
+    </div>`;
+  });
+  h += `</div>
+    <div style="display:flex;flex-direction:column;gap:9px">
+      <div><label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:3px">Best condition because:</label>
+      <input type="text" value="${state.c1.best}" oninput="state.c1.best=this.value;render()" placeholder="..." style="width:100%"></div>
+      <div><label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:3px">Worst condition because:</label>
+      <input type="text" value="${state.c1.worst}" oninput="state.c1.worst=this.value;render()" placeholder="..." style="width:100%"></div>
+    </div>
+  </div>`;
+
+  h += `<p class="sec-h">C2. Technology Acceptance &amp; Trust</p><p class="note">1 = Strongly disagree → 7 = Strongly agree</p>`;
+  ["Using the exoskeleton for similar walking tasks would be useful to me.",
+   "I would use this system if available.",
+   "I felt in control while using the system.",
+   "I would trust this system to assist me reliably.",
+   "I would be willing to use the system regularly for similar tasks."
+  ].forEach((q,i) => {
+    h += qblock(i+1, q, likert(state.c2[i], `v=>{const a=[...state.c2];a[${i}]=a[${i}]===v?null:v;state.c2=a;render()}`));
+  });
+  return h;
+}
+
+function render() {
+  const scrollArea = document.querySelector('.scroll-area');
+  const savedScroll = scrollArea ? scrollArea.scrollTop : 0;
+  const active = document.activeElement;
+  let focusData = null;
+  if (active && active.tagName === 'INPUT' && active.type === 'text') {
+    const inputs = Array.from(document.querySelectorAll('input[type=text]'));
+    focusData = { idx: inputs.indexOf(active), selStart: active.selectionStart, selEnd: active.selectionEnd };
+  }
+  const { tab, meta, notice, showResetModal } = state;
+  const prog = calcProgress();
+
+  document.getElementById('root').innerHTML = `
+    ${showResetModal ? `<div class="modal-overlay">
+      <div class="modal">
+        <h3>Reset for new participant?</h3>
+        <p>This will clear all current data. Make sure you have already exported the CSV for the previous participant.</p>
+        <div class="modal-btns">
+          <button class="btn-save" onclick="state.showResetModal=false;render()">Cancel</button>
+          <button class="btn-new" onclick="resetParticipant()">Yes, reset</button>
+        </div>
+      </div>
+    </div>` : ''}
+
+    <div class="card">
+      <p style="font-size:17px;font-weight:500;color:var(--text-primary);margin-bottom:14px">
+        Exoskeleton Study Questionnaire
+      </p>
+      <div class="grid2">
+        <div>
+          <span class="field-lbl">Participant ID</span>
+          <input type="text" value="${meta.id}" oninput="state.meta.id=this.value;render()" placeholder="P001" style="width:120px">
+        </div>
+        <div>
+          <span class="field-lbl">Date</span>
+          <input type="date" value="${meta.date}" onchange="state.meta.date=this.value;render()" style="width:148px">
+        </div>
+        <div>
+          <span class="field-lbl">Environment</span>
+          <input type="text" value="${meta.env}" oninput="state.meta.env=this.value;render()" placeholder="Lab / Outdoor..." style="width:160px">
+        </div>
+      </div>
+    </div>
+
+    <div class="progress-bar-wrap">
+      <div class="progress-bar" style="width:${prog}%"></div>
+    </div>
+
+    <div class="card" style="padding:0;overflow:hidden">
+      <div style="display:flex;border-bottom:0.5px solid var(--border-subtle);background:var(--bg-secondary);overflow-x:auto">
+        <button class="tab-btn${tab==='A'?' active':''}" onclick="state.tab='A';render()">A · Pre-study</button>
+        <button class="tab-btn${tab==='B'?' active':''}" onclick="state.tab='B';render()">B · Post-condition</button>
+        <button class="tab-btn${tab==='C'?' active':''}" onclick="state.tab='C';render()">C · End-of-session</button>
+      </div>
+      <div class="scroll-area">
+        ${tab==='A' ? renderA() : tab==='B' ? renderB() : renderC()}
+      </div>
+    </div>
+
+    <div class="footer">
+      ${notice ? `<span class="notice">${notice}</span>` : ''}
+      <button class="btn-new" onclick="state.showResetModal=true;render()">
+        <i class="ti ti-user-plus" aria-hidden="true"></i> New participant
+      </button>
+      <button class="btn-save" onclick="saveAll()">
+        <i class="ti ti-device-floppy" aria-hidden="true"></i> Save
+      </button>
+      <button class="btn-export" onclick="exportCSV()">
+        <i class="ti ti-download" aria-hidden="true"></i> Export CSV
+      </button>
+    </div>
+  `;
+
+  const newScrollArea = document.querySelector('.scroll-area');
+  if (newScrollArea) newScrollArea.scrollTop = savedScroll;
+  if (focusData && focusData.idx >= 0) {
+    const inputs = Array.from(document.querySelectorAll('input[type=text]'));
+    const el = inputs[focusData.idx];
+    if (el) { el.focus(); try { el.setSelectionRange(focusData.selStart, focusData.selEnd); } catch(_) {} }
+  }
+}
+
+loadSaved();
+render();
+</script>
+</body>
+</html>
