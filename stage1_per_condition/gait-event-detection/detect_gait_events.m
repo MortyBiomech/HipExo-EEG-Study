@@ -40,8 +40,8 @@ function [HS_R, TO_R, HS_L, TO_L] = detect_gait_events(GRF, Right_leg_indx, Left
     % --- Crop to walking period using marker channel ---
     % idx_start = find(marker ==  1, 1, 'first');                %%%%%%%% uncomment when GRF has 9 channels
     % idx_end   = find(marker == -1, 1, 'first');                %%%%%%%% uncomment when GRF has 9 channels
-    idx_start = 6540;
-    idx_end   = 44330;
+    % idx_start = 6540;
+    % idx_end   = 44330;
 
     if isempty(idx_start) || isempty(idx_end)
         warning('Marker channel has no START/END markers. Using full recording.');

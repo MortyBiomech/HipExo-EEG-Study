@@ -5,25 +5,48 @@ clc;
 clear;
 
 % 1. Configure paths
-addpath(genpath('C:\2026SSArbeit\HipExo-EEG-Study'));
-addpath('C:\egglab_task\eeglab2025.1.0\plugins\xdfimport1.2');
+addpath(genpath('D:\Morteza\MyProjects\X1Dnsys_EEG\Code'))
+addpath(genpath('D:\Morteza\MyProjects\X1Dnsys_EEG\Code\EMG_pre-analysis'));
+addpath('D:\Morteza\Toolboxes\EEGLAB\eeglab2026.0.0\plugins\xdfimport1.2');
 
-data_path = 'C:\2026SSArbeit\data\PilotTest2\Sub-P2_1\day2\data\';
-save_path = 'C:\2026SSArbeit\data\PilotTest2\Sub-P2_1\day2\processed_EMG\';
+data_path = 'D:\Morteza\MyProjects\X1Dnsys_EEG\Pilots\PilotTest2\Sub-P2_3\day2\data\';
+save_path = 'D:\Morteza\MyProjects\X1Dnsys_EEG\Pilots\PilotTest2\Sub-P2_3\day2\processed_EMG\';
 
 if ~exist(save_path, 'dir')
     mkdir(save_path);
 end
 
 % 2. Subject and Session Settings
-subject = 'Pilot2_1_day2';
-order_sessions = {'NoExoPre', 'Exo1_sport', 'Exo2_aquaplus', 'ExoOff', ...
-                  'Exo3_eco', 'Exo4_aqua', 'Exo5_boost', 'NoExoPost'};
-num_sessions = length(order_sessions);
+subject = 'Pilot2_3_day2';
+
+% Path to one subject's session folders
+subjectDir = data_path;   
+
+% List only sub-directories, dropping '.' and '..'
+d = dir(subjectDir);
+folderNames = {d([d.isdir]).name};
+folderNames(ismember(folderNames, {'.','..'})) = [];
+
+% Pre-allocate the ordered cell array (8 conditions)
+conditions = cell(1, 8);
+
+% First condition is always NoExoPre
+conditions{1} = folderNames{contains(folderNames, 'NoExoPre')};
+
+% Middle six: find Exo1 ... Exo6 by their number
+for k = 1:6
+    hit = folderNames(contains(folderNames, sprintf('Exo%d', k)));
+    conditions{k+1} = hit{1};
+end
+
+% Last condition is always NoExoPost
+conditions{8} = folderNames{contains(folderNames, 'NoExoPost')};
+num_sessions = length(conditions);
 
 % Force plate (GRF) channel definition
 Left_leg_indx  = [2 3 6 7];     
 Right_leg_indx = [1 4 5 8];    
+
 
 %% ========================================================================
 %% 3. Start batch extraction and save data
@@ -31,13 +54,14 @@ Right_leg_indx = [1 4 5 8];
 fprintf('Starting data preprocessing for subject %s...\n', subject);
 
 for s = 1:num_sessions
-    current_session = order_sessions{s};
+    %%
+    current_session = conditions{s};
     fprintf('\n========================================================\n');
     fprintf('Processing [%d/%d]: %s\n', s, num_sessions, current_session);
     
     % --- 3.1 Assemble file path and load XDF ---
-    filename = ['sub-', subject, '_ses-', current_session, '_task-Default_run-001_eeg.xdf'];
-    filepath = fullfile(data_path, ['ses-', current_session], 'eeg');
+    filename = ['sub-', subject, '_', current_session, '_task-Default_run-001_eeg.xdf'];
+    filepath = fullfile(data_path, [current_session], 'eeg');
     full_file_path = fullfile(filepath, filename);
     
     if ~exist(full_file_path, 'file')
@@ -48,7 +72,7 @@ for s = 1:num_sessions
     fprintf('>> Loading XDF file...\n');
     [streams, ~] = load_xdf(full_file_path);
     
-    % --- 3.2 Extract GRF gait events ---
+    %% --- 3.2 Extract GRF gait events ---
     grf_idx = find(strcmp(cellfun(@(x) x.info.name, streams, 'UniformOutput', false), 'GRF'));
     if isempty(grf_idx)
         warning('GRF data stream not found, skipping gait event extraction.');
