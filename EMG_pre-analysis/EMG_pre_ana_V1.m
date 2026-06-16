@@ -1,12 +1,15 @@
 %%
 % 1. Select EMG Signals and Calculate the Number of Channels.
+
 emg_indices = [];
 for i = 1:length(streams)
     if strcmp(streams{i}.info.type, 'EMG') 
+        % Channels correspond to EMG signals
         emg_indices = [emg_indices, i];
     end
 end
 
+% Total number of EMG signal channels
 total_emg_channels = 0;
 
 for m = 1:length(emg_indices)
@@ -42,7 +45,7 @@ durations_time = diff(valid_cycles_time, 1, 2);
 durations_samples = round(durations_time * fs_emg);
 num_cycles = size(valid_cycles_time, 1);
 
-% Exclude first 20 and last 20 cycles
+% Exclude first 20 and last 20 gait cycles
 cycle_start = 21;
 cycle_end = num_cycles - 20;
 
