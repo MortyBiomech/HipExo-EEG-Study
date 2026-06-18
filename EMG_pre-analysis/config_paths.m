@@ -6,9 +6,9 @@ eeglab_path  = 'C:\egglab_task\eeglab2025.1.0\plugins\xdfimport1.2';
 data_root    = 'C:\2026SSArbeit\data\PilotTest2';
 
 % 2. Subject & Experiment Information
-subject_folder = 'Sub-P2_3';
-subject_id     = 'Pilot2_3';
-experiment_day = 'day2';
+subject_folder = 'Sub-P2_2';
+subject_id     = 'Pilot2_2';
+experiment_day = 'day1';
 
 % 3. Automatically Generate Full Paths
 addpath(genpath(project_root));

@@ -51,11 +51,18 @@ for s = 1:num_sessions
     % Assemble file path and load XDF dynamically using config variables
     % Format matches: sub-Pilot2_3_day2_ses-Exo1_eco_task-Default_run-001_eeg.xdf
     % (Assuming 'current_session' variable contains the 'ses-Exo1_eco' string)
-    filename = sprintf('sub-%s_%s_%s_task-Default_run-001_eeg.xdf', subject_id, experiment_day, current_session);
+
+    if(subject_id ~= 'Pilot2_2')
+        filename = sprintf('sub-%s_%s_%s_task-Default_run-001_eeg.xdf', subject_id, experiment_day, current_session);
     
-    filepath = fullfile(data_path, current_session, 'eeg');
-    full_file_path = fullfile(filepath, filename);
+        filepath = fullfile(data_path, current_session, 'eeg');
+        full_file_path = fullfile(filepath, filename);
+    else
+        filename = sprintf('sub-%s_%s_task-Default_run-001_eeg.xdf', subject_id, current_session);
     
+        filepath = fullfile(data_path, current_session, 'eeg');
+        full_file_path = fullfile(filepath, filename);
+    end
     if ~exist(full_file_path, 'file')
         warning('File not found: %s, skipping this session.', full_file_path);
         continue;
