@@ -1,22 +1,22 @@
-%% ========================================================================
 %% Subject Data Preprocessing Script (XDF to MAT) 
-%% ========================================================================
 clc;
 clear;
 
-% 1. Configure paths
-addpath(genpath('D:\Morteza\MyProjects\X1Dnsys_EEG\Code'))
-addpath(genpath('D:\Morteza\MyProjects\X1Dnsys_EEG\Code\EMG_pre-analysis'));
-addpath('D:\Morteza\Toolboxes\EEGLAB\eeglab2026.0.0\plugins\xdfimport1.2');
+%% 1.Configure paths
+%addpath(genpath('D:\Morteza\MyProjects\X1Dnsys_EEG\Code'))
+addpath(genpath('C:\2026SSArbeit\HipExo-EEG-Study\EMG_pre-analysis'));
+addpath('C:\egglab_task\eeglab2025.1.0\plugins\xdfimport1.2');
 
-data_path = 'D:\Morteza\MyProjects\X1Dnsys_EEG\Pilots\PilotTest2\Sub-P2_3\day2\data\';
-save_path = 'D:\Morteza\MyProjects\X1Dnsys_EEG\Pilots\PilotTest2\Sub-P2_3\day2\processed_EMG\';
+data_path = 'C:\2026SSArbeit\data\PilotTest2\Sub-P2_3\day2\data\';
+save_path = 'C:\2026SSArbeit\data\PilotTest2\Sub-P2_3\day2\processed_EMG\';
 
 if ~exist(save_path, 'dir')
     mkdir(save_path);
 end
 
-% 2. Subject and Session Settings
+%% 2.Read data under different conditions.
+
+% Subject and Session Settings
 subject = 'Pilot2_3_day2';
 
 % Path to one subject's session folders
@@ -47,10 +47,8 @@ num_sessions = length(conditions);
 Left_leg_indx  = [2 3 6 7];     
 Right_leg_indx = [1 4 5 8];    
 
-
-%% ========================================================================
 %% 3. Start batch extraction and save data
-%% ========================================================================
+
 fprintf('Starting data preprocessing for subject %s...\n', subject);
 
 for s = 1:num_sessions
@@ -59,7 +57,7 @@ for s = 1:num_sessions
     fprintf('\n========================================================\n');
     fprintf('Processing [%d/%d]: %s\n', s, num_sessions, current_session);
     
-    % --- 3.1 Assemble file path and load XDF ---
+    %  Assemble file path and load XDF 
     filename = ['sub-', subject, '_', current_session, '_task-Default_run-001_eeg.xdf'];
     filepath = fullfile(data_path, [current_session], 'eeg');
     full_file_path = fullfile(filepath, filename);
@@ -72,7 +70,8 @@ for s = 1:num_sessions
     fprintf('>> Loading XDF file...\n');
     [streams, ~] = load_xdf(full_file_path);
     
-    %% --- 3.2 Extract GRF gait events ---
+    % Extract GRF gait events 
+
     grf_idx = find(strcmp(cellfun(@(x) x.info.name, streams, 'UniformOutput', false), 'GRF'));
     if isempty(grf_idx)
         warning('GRF data stream not found, skipping gait event extraction.');
@@ -105,7 +104,7 @@ for s = 1:num_sessions
         continue; % Abandon this set of data and continue to the next session
     end
                             
-    % --- 3.3 Save as .mat file ---
+    %  Save as .mat file 
     % Save streams and the 4 extracted gait events together for use by the main EMG dashboard program
     save_filename = fullfile(save_path, sprintf('Data_%s.mat', current_session));
     fprintf('>> Saving to: %s\n', save_filename);
