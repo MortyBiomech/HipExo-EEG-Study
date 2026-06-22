@@ -36,11 +36,6 @@ end
 
 %% Load configuration
 
-% Original template:
-% template_bemobil_config;
-
-% Use your own config file in scripts_yadan.
-% This avoids path/name ambiguity.
 run(fullfile(scriptsFolder, 'bemobil_config_.m'));
 
 % Force correct study folder
