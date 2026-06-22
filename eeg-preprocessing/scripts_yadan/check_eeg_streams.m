@@ -8,7 +8,7 @@
 
 clear; clc; close all;
 
-%% Paths for Mac
+%% Paths
 
 projectFolder = '/Users/dydan/master_thesis/HipExo-EEG-Study/eeg_preprocessing_yadan';
 
