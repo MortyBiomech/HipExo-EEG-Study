@@ -8,7 +8,7 @@ clear; clc; close all;
 
 %% Paths 
 
-projectFolder = '/Users/dydan/master_thesis/HipExo-EEG-Study/eeg_preprocessing_yadan';
+projectFolder = '/Users/dydan/master_thesis/HipExo-EEG-Study/eeg_preprocessing';
 
 eeglabFolder    = '/Users/dydan/master_thesis/eeglab2026.0.0';
 bemobilFolder   = fullfile(projectFolder, 'BeMoBIL');

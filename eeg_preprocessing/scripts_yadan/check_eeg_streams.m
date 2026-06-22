@@ -10,7 +10,7 @@ clear; clc; close all;
 
 %% Paths
 
-projectFolder = '/Users/dydan/master_thesis/HipExo-EEG-Study/eeg-preprocessing';
+projectFolder = '/Users/dydan/master_thesis/HipExo-EEG-Study/eeg_preprocessing';
 % projectFolder = pwd;
 
 eeglabFolder    = '/Users/dydan/master_thesis/eeglab2026.0.0';
