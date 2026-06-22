@@ -1,0 +1,25 @@
+{
+	"Acknowledgements":"n/a",
+	"Authors":[
+		"Yadan Deng"
+	],
+	"BIDSVersion":"1.8.0",
+	"DatasetDOI":"n/a",
+	"DatasetType":"raw",
+	"Funding":[
+		"n/a"
+	],
+	"GeneratedBy":[
+		{
+			"Name":"FieldTrip",
+			"Version":"20260617",
+			"Description":"data2bids converter",
+			"URI":"https://www.fieldtriptoolbox.org"
+		}
+	],
+	"License":"n/a",
+	"Name":"HipExo EEG PilotTest2",
+	"ReferencesAndLinks":[
+		"n/a"
+	]
+}
