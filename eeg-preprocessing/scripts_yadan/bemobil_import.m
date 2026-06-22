@@ -15,7 +15,7 @@
 
 clear; clc;
 
-%% Paths for Mac
+%% Paths
 
 projectFolder = '/Users/dydan/master_thesis/HipExo-EEG-Study/eeg_preprocessing_yadan';
 
@@ -202,7 +202,7 @@ for subject = 1
         config.overwrite = 'on';
 
         % Real EEG stream.
-        % Do NOT use the DeviceTrigger stream.
+        
         config.eeg.stream_name = 'LiveAmpSN-102108-1139';
 
         %------------------------------------------------------------------
