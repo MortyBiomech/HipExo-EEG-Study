@@ -1,6 +1,7 @@
 clear bemobil_config
 
 %% General Setup
+% your outputFolder path
 bemobil_config.study_folder = ['/Users/dydan/master_thesis/HipExo-EEG-Study/eeg_preprocessing/output_data' filesep]; %(NEEDS to have a filesep at the end, sorry!) 
 bemobil_config.filename_prefix = 'sub-';
 
