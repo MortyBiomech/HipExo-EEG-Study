@@ -3,8 +3,10 @@
 % 1. List all XDF files.
 % 2. Show all streams in each XDF file.
 % 3. Detect which files contain real EEG.
-% 4. Save summary tables to output_data.
-% Check required toolbox: Statistics and Machine Learning Toolbox
+% 4. Save summary tables to output_data:
+%    xdf_file_stream_summary.csv
+%    xdf_stream_detail_table.csv
+
 
 clear; clc; close all;
 
@@ -13,27 +15,19 @@ clear; clc; close all;
 projectFolder = '/Users/dydan/master_thesis/HipExo-EEG-Study/eeg_preprocessing';
 % projectFolder = pwd;
 
-eeglabFolder    = '/Users/dydan/master_thesis/eeglab2026.0.0';
-bemobilFolder   = fullfile(projectFolder, 'BeMoBIL');
-scriptsFolder   = fullfile(projectFolder, 'scripts_yadan');
 fieldtripFolder = '/Users/dydan/master_thesis/fieldtrip-20260617';
-
 rawDataFolder = '/Users/dydan/master_thesis/PilotTest2';
-outputFolder  = fullfile(projectFolder, 'output_data');
 
+
+outputFolder  = fullfile(projectFolder, 'output_data');
 if ~exist(outputFolder, 'dir')
     mkdir(outputFolder);
 end
 
 %% Add paths
 
-addpath(eeglabFolder);
-addpath(genpath(bemobilFolder));
-addpath(scriptsFolder);
-
 addpath(fieldtripFolder);
 ft_defaults;
-
 addpath(fullfile(fieldtripFolder, 'external', 'xdf'));
 
 fprintf('Using ft_defaults from:\n%s\n', which('ft_defaults'));
@@ -53,10 +47,6 @@ if isempty(files)
     error('No XDF files found. Please check rawDataFolder.');
 end
 
-for i = 1:length(files)
-    fprintf('%3d: %s\n', i, fullfile(files(i).folder, files(i).name));
-end
-
 %% Scan every XDF file
 
 fileSummaryTable = table();
@@ -65,16 +55,27 @@ streamDetailTable = table();
 eegFilePaths = {};
 eegStreamNames = {};
 
+%% Autosave settings
+
+summaryFile = fullfile(outputFolder, 'xdf_file_stream_summary.csv');
+detailFile  = fullfile(outputFolder, 'xdf_stream_detail_table.csv');
+
+
+saveEveryNFiles = 5;
+
 for i = 1:length(files)
+    if mod(i, 5) == 0 || i == 1 || i == length(files)
+        fprintf('Scanned %d/%d files: %s\n', i, length(files), files(i).name);
+    end
 
     xdfPath = fullfile(files(i).folder, files(i).name);
 
-    fprintf('\n============================================================\n');
-    fprintf('Checking file %d/%d:\n%s\n', i, length(files), xdfPath);
-    fprintf('============================================================\n');
-
     try
-        streams = load_xdf(xdfPath);
+        streams = load_xdf(xdfPath, ...
+            'Verbose', false, ...
+            'HandleClockSynchronization', false, ...
+            'HandleJitterRemoval', false, ...
+            'HandleClockResets', false);
 
         nStreams = numel(streams);
 
@@ -93,13 +94,12 @@ for i = 1:length(files)
             streamRates(s) = get_xdf_info_field(info, 'nominal_srate');
             streamChans(s) = get_xdf_info_field(info, 'channel_count');
 
-            %% Accurate EEG detection
+            %% EEG detection
             % Real EEG should have:
             % 1. stream type = EEG
             % 2. sampling rate > 0
             % 3. channel count > 10
-            %
-            % This avoids wrongly detecting DeviceTrigger as EEG.
+     
 
             srateNum = str2double(streamRates(s));
             chanNum  = str2double(streamChans(s));
@@ -110,19 +110,6 @@ for i = 1:length(files)
 
         end
 
-        disp('Streams in this file:');
-
-        for s = 1:nStreams
-            fprintf('  Stream %2d | name: %-40s | type: %-15s | srate: %-10s | channels: %-10s', ...
-                s, streamNames(s), streamTypes(s), streamRates(s), streamChans(s));
-
-            if isEEGCandidate(s)
-                fprintf('  <-- real EEG');
-            end
-
-            fprintf('\n');
-        end
-
         hasEEG = any(isEEGCandidate);
 
         if hasEEG
@@ -130,12 +117,9 @@ for i = 1:length(files)
 
             eegFilePaths{end+1, 1} = xdfPath;
             eegStreamNames{end+1, 1} = char(streamNames(firstEEGIndex));
-
-            fprintf('\n>>> Real EEG found: %s\n', streamNames(firstEEGIndex));
-        else
-            fprintf('\n--- No real EEG found in this file.\n');
         end
 
+      
         fileRow = table( ...
             i, ...
             string(files(i).name), ...
@@ -184,15 +168,25 @@ for i = 1:length(files)
         fileSummaryTable = [fileSummaryTable; fileRow];
 
     end
-    %% Save summary tables
 
-    summaryFile = fullfile(outputFolder, 'xdf_file_stream_summary.csv');
-    detailFile  = fullfile(outputFolder, 'xdf_stream_detail_table.csv');
+    %% Autosave progress
 
-    writetable(fileSummaryTable, summaryFile);
-    writetable(streamDetailTable, detailFile);
+    if mod(i, saveEveryNFiles) == 0 || i == length(files)
+        writetable(fileSummaryTable, summaryFile);
+        writetable(streamDetailTable, detailFile);
+
+        fprintf('Autosaved progress after %d/%d files.\n', i, length(files));
+    end
+   
 end
 
+%% Save summary tables
+
+summaryFile = fullfile(outputFolder, 'xdf_file_stream_summary.csv');
+detailFile  = fullfile(outputFolder, 'xdf_stream_detail_table.csv');
+
+writetable(fileSummaryTable, summaryFile);
+writetable(streamDetailTable, detailFile);
 
 
 fprintf('\n============================================================\n');
@@ -208,10 +202,7 @@ if isempty(eegFilePaths)
     fprintf('No EEG files found.\n');
     fprintf('Check xdf_stream_detail_table.csv manually.\n');
 else
-    for i = 1:length(eegFilePaths)
-        fprintf('%3d: EEG stream = %-40s | file = %s\n', ...
-            i, eegStreamNames{i}, eegFilePaths{i});
-    end
+    fprintf('\nFound %d XDF files in:\n%s\n', length(files), rawDataFolder);
 end
 
 %% Helper function
