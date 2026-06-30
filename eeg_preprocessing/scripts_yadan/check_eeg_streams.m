@@ -4,9 +4,8 @@
 % 2. Show all streams in each XDF file.
 % 3. Detect which files contain real EEG.
 % 4. Save summary tables to output_data:
-%    xdf_file_stream_summary.csv
-%    xdf_stream_detail_table.csv
-
+%    - xdf_file_stream_summary.csv
+%    - xdf_stream_detail_table.csv
 
 clear; clc; close all;
 
