@@ -4,13 +4,6 @@
 %
 % It reads one row per XDF file from the import table.
 %
-% Naming rule:
-%   Raw:
-%       Sub-P2_1 / day2 / data / ses-Exo1_sport / eeg / xxx.xdf
-%
-%   BeMoBIL/BIDS:
-%       sub-01 / ses-Pilot2p1day2sesExo1Sport / eeg / ...
-%
 % Important:
 %   First run:
 %       1) check_eeg_streams.m
