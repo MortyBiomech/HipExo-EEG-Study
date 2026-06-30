@@ -152,11 +152,21 @@ EEG = eeg_checkset( EEG );
 if save_file_on_disk
     
     % save dipole fig
-    print(gcf,fullfile(out_filepath,[erase(out_filename,'.set') '_brain_dipoles.png']),'-dpng')
+    % print(gcf,fullfile(out_filepath,[erase(out_filename,'.set') '_brain_dipoles.png']),'-dpng')
+    try
+        print(gcf, fullfile(out_filepath, [erase(out_filename,'.set') '_brain_dipoles.png']), '-dpng');
+    catch ME
+        warning('Could not save brain dipoles PNG. Skipping this QC figure. Error: %s', ME.message);
+    end
     savefig(fullfile(out_filepath,[erase(out_filename,'.set') '_brain_dipoles.fig']))
 
     close
-    print(fig1,fullfile(out_filepath,[erase(out_filename,'.set') '_ICs_kept.png']),'-dpng')
+    % print(fig1,fullfile(out_filepath,[erase(out_filename,'.set') '_ICs_kept.png']),'-dpng')
+    try
+        print(fig1,fullfile(out_filepath,[erase(out_filename,'.set') '_ICs_kept.png']),'-dpng');
+    catch ME
+        warning('Could not save brain dipoles PNG. Skipping this QC figure. Error: %s', ME.message);
+    end
     close
     EEG = pop_saveset( EEG, 'filename',erase(out_filename,'.set'),'filepath', out_filepath);
     disp('...done');

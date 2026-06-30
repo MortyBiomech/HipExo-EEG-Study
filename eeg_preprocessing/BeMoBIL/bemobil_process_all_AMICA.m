@@ -207,7 +207,14 @@ if ~exist('EEG_preprocessed_and_ICA','var')
         clear data2plot
         % save figure to disk
         savefig(gcf,fullfile(output_filepath,[bemobil_config.filename_prefix num2str(subject) '_AMICA_autoreject.fig']))
-        print(gcf,fullfile(output_filepath,[bemobil_config.filename_prefix num2str(subject) '_AMICA_autoreject.png']),'-dpng')
+
+        try
+            print(gcf, fullfile(output_filepath, ...
+                [bemobil_config.filename_prefix num2str(subject) '_AMICA_autoreject.png']), '-dpng');
+        catch ME
+            warning('Could not save AMICA autoreject PNG figure. Skipping PNG export. Reason: %s', ME.message);
+        end
+        % print(gcf,fullfile(output_filepath,[bemobil_config.filename_prefix num2str(subject) '_AMICA_autoreject.png']),'-dpng')
         close
         
         % plot all ICs
@@ -315,7 +322,12 @@ if ~exist('EEG_preprocessed_and_ICA','var')
     drawnow
     axeshandle = gca;
     fighandle = gcf;
-    axcp = copyobj(axeshandle, plotfigure);
+    % axcp = copyobj(axeshandle, plotfigure);
+    try
+        axcp = copyobj(axeshandle, plotfigure);
+    catch ME
+        warning('Could not copy QC plot axes. Skipping this QC figure. Error: %s', ME.message);
+    end
     set(axcp,'Position',get(ax1,'position'));
     axcp.XTickLabel = [0:10]+round(starttime/1000);
     axcp.YTick=[];
@@ -331,7 +343,12 @@ if ~exist('EEG_preprocessed_and_ICA','var')
     drawnow
     axeshandle = gca;
     fighandle = gcf;
-    axcp = copyobj(axeshandle, plotfigure);
+    % axcp = copyobj(axeshandle, plotfigure);
+    try
+        axcp = copyobj(axeshandle, plotfigure);
+    catch ME
+        warning('Could not copy QC plot axes. Skipping this QC figure. Error: %s', ME.message);
+    end
     set(axcp,'Position',get(ax2,'position'));
     axcp.XTickLabel = [0:10]+round(starttime/1000);
     axcp.YTick=[];
@@ -347,7 +364,12 @@ if ~exist('EEG_preprocessed_and_ICA','var')
     drawnow
     axeshandle = gca;
     fighandle = gcf;
-    axcp = copyobj(axeshandle, plotfigure);
+    % axcp = copyobj(axeshandle, plotfigure);
+    try
+        axcp = copyobj(axeshandle, plotfigure);
+    catch ME
+        warning('Could not copy QC plot axes. Skipping this QC figure. Error: %s', ME.message);
+    end
     set(axcp,'Position',get(ax3,'position'));
     axcp.XTickLabel = [0:10]+round(starttime/1000);
     axcp.YTick=[];
@@ -363,7 +385,12 @@ if ~exist('EEG_preprocessed_and_ICA','var')
     drawnow
     axeshandle = gca;
     fighandle = gcf;
-    axcp = copyobj(axeshandle, plotfigure);
+    % axcp = copyobj(axeshandle, plotfigure);
+    try
+        axcp = copyobj(axeshandle, plotfigure);
+    catch ME
+        warning('Could not copy QC plot axes. Skipping this QC figure. Error: %s', ME.message);
+    end
     set(axcp,'Position',get(ax4,'position'));
     axcp.XTickLabel = [0:10]+round(starttime/1000);
     axcp.YTick=[];
@@ -379,7 +406,12 @@ if ~exist('EEG_preprocessed_and_ICA','var')
     drawnow
     axeshandle = gca;
     fighandle = gcf;
-    axcp = copyobj(axeshandle, plotfigure);
+    % axcp = copyobj(axeshandle, plotfigure);
+    try
+        axcp = copyobj(axeshandle, plotfigure);
+    catch ME
+        warning('Could not copy QC plot axes. Skipping this QC figure. Error: %s', ME.message);
+    end
     set(axcp,'Position',get(ax5,'position'));
     axcp.XTickLabel = [0:10]+round(starttime/1000);
     axcp.YTick=[];
@@ -395,7 +427,12 @@ if ~exist('EEG_preprocessed_and_ICA','var')
     drawnow
     axeshandle = gca;
     fighandle = gcf;
-    axcp = copyobj(axeshandle, plotfigure);
+    % axcp = copyobj(axeshandle, plotfigure);
+    try
+        axcp = copyobj(axeshandle, plotfigure);
+    catch ME
+        warning('Could not copy QC plot axes. Skipping this QC figure. Error: %s', ME.message);
+    end
     set(axcp,'Position',get(ax6,'position'));
     axcp.XTickLabel = [0:10]+round(starttime/1000);
     axcp.YTick=[];

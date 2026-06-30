@@ -10,25 +10,17 @@
 
 clear; clc; close all;
 
-%% Paths
+%% Load central paths
 
-projectFolder = '/Users/dydan/master_thesis/HipExo-EEG-Study/eeg_preprocessing';
-% projectFolder = pwd;
+run(fullfile(fileparts(mfilename('fullpath')), 'paths.m'));
 
-fieldtripFolder = '/Users/dydan/master_thesis/fieldtrip-20260617';
-rawDataFolder = '/Users/dydan/master_thesis/PilotTest2';
-
-
-outputFolder  = fullfile(projectFolder, 'output_data');
 if ~exist(outputFolder, 'dir')
     mkdir(outputFolder);
 end
 
-%% Add paths
+%% Initialize FieldTrip
 
-addpath(fieldtripFolder);
 ft_defaults;
-addpath(fullfile(fieldtripFolder, 'external', 'xdf'));
 
 fprintf('Using ft_defaults from:\n%s\n', which('ft_defaults'));
 fprintf('Using load_xdf from:\n%s\n', which('load_xdf'));
@@ -56,10 +48,6 @@ eegFilePaths = {};
 eegStreamNames = {};
 
 %% Autosave settings
-
-summaryFile = fullfile(outputFolder, 'xdf_file_stream_summary.csv');
-detailFile  = fullfile(outputFolder, 'xdf_stream_detail_table.csv');
-
 
 saveEveryNFiles = 5;
 
@@ -177,9 +165,6 @@ for i = 1:length(files)
 end
 
 %% Save summary tables
-
-summaryFile = fullfile(outputFolder, 'xdf_file_stream_summary.csv');
-detailFile  = fullfile(outputFolder, 'xdf_stream_detail_table.csv');
 
 writetable(fileSummaryTable, summaryFile);
 writetable(streamDetailTable, detailFile);
