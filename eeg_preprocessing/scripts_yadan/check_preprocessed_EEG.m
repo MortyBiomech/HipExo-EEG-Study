@@ -8,41 +8,70 @@
 %   4) bemobil_process_all_EEG_data.m
 %   5) this quality-check script
 %
-% This script checks the preprocessing output, not AMICA/final ICA output.
 %
 % Table-driven control:
 %   DoQC = 1  -> check this row
 %   DoQC = 0  -> skip this row
 %
-% If DoQC does not exist yet:
-%   - this script creates it automatically.
-%   - rows with PreprocessingStatus == "completed" are selected by default.
-%   - if PreprocessingStatus does not exist, it falls back to DoPreprocess.
+% Default behavior:
+%   DoQC is reset from PreprocessingStatus == "completed".
+%
+% Important:
+%   This script checks preprocessed raw EEG output.
 
 clear; clc; close all;
 
-%% Load central paths
+% Keep figures hidden during QC.
+set(0, 'DefaultFigureVisible', 'off');
+set(groot, 'DefaultFigureVisible', 'off');
+
+%% ========================================================================
+%  LOAD CENTRAL PATHS
+%  ========================================================================
 
 run(fullfile(fileparts(mfilename('fullpath')), 'paths.m'));
 
 if ~exist(mappingFile, 'file')
-    error('Import table not found:\n%s\nPlease run import_table.m, bemobil_import.m, and preprocessing first.', mappingFile);
+    error('Import table not found:\n%s\nPlease run import_table.m, bemobil_import_resample_merge.m, and preprocessing first.', mappingFile);
 end
 
-%% Expected preprocessing result
+%% ========================================================================
+%  QC SETTINGS
+%  ========================================================================
 
 expectedChannels = 64;
 expectedSrate    = 250;
 
+% If true:
+%   DoQC will be overwritten from PreprocessingStatus == "completed".
+%
+% Recommended after a new preprocessing run.
+%
+% Later, if you want to manually edit DoQC in the CSV,
+% set this to false.
+reset_DoQC_from_PreprocessingStatus = true;
+
+%% ========================================================================
+%  INITIALIZE EEGLAB
+%  ========================================================================
+
 if ~exist('pop_loadset', 'file')
-    eeglab;
+    eeglab nogui;
 end
 
-%% Load BeMoBIL configuration
+hide_all_figures();
+
+%% ========================================================================
+%  LOAD BEMOBIL CONFIGURATION
+%  ========================================================================
 
 run(fullfile(scriptsFolder, 'bemobil_config_.m'));
 
-%% Read import table
+hide_all_figures();
+
+%% ========================================================================
+%  READ IMPORT TABLE
+%  ========================================================================
 
 optsImport = detectImportOptions(mappingFile, ...
     'FileType', 'text', ...
@@ -51,72 +80,92 @@ optsImport = detectImportOptions(mappingFile, ...
 
 sourceMap = readtable(mappingFile, optsImport);
 
-%% Check required columns
+fprintf('\nLoaded import table:\n%s\n', mappingFile);
+fprintf('Rows in import table: %d\n', height(sourceMap));
+
+%% ========================================================================
+%  CHECK REQUIRED COLUMNS
+%  ========================================================================
 
 requiredColumns = { ...
     'DoImport', ...
     'XdfPath', ...
     'FileName', ...
     'BidsSubject', ...
-    'BidsSession' ...
+    'BidsSession', ...
+    'PreprocessingStatus', ...
+    'PreprocessedSetPath' ...
 };
 
 for c = 1:length(requiredColumns)
     if ~ismember(requiredColumns{c}, sourceMap.Properties.VariableNames)
-        error('Import table is missing required column: %s', requiredColumns{c});
+        error(['Import table is missing required column: %s\n' ...
+               'Please run bemobil_process_all_EEG_data_1.m first.'], ...
+               requiredColumns{c});
     end
 end
 
-%% Normalize important columns
+%% ========================================================================
+%  NORMALIZE IMPORTANT COLUMNS
+%  ========================================================================
 
 sourceMap = ensure_numeric_column(sourceMap, 'DoImport');
 sourceMap = ensure_numeric_column(sourceMap, 'BidsSubject');
 
-sourceMap.XdfPath     = string(sourceMap.XdfPath);
-sourceMap.FileName    = string(sourceMap.FileName);
-sourceMap.BidsSession = string(sourceMap.BidsSession);
+sourceMap.XdfPath             = string(sourceMap.XdfPath);
+sourceMap.FileName            = string(sourceMap.FileName);
+sourceMap.BidsSession         = string(sourceMap.BidsSession);
+sourceMap.PreprocessingStatus = string(sourceMap.PreprocessingStatus);
+sourceMap.PreprocessedSetPath = string(sourceMap.PreprocessedSetPath);
 
-if ismember('PreprocessingStatus', sourceMap.Properties.VariableNames)
-    sourceMap.PreprocessingStatus = string(sourceMap.PreprocessingStatus);
+sourceMap.XdfPath(ismissing(sourceMap.XdfPath)) = "";
+sourceMap.FileName(ismissing(sourceMap.FileName)) = "";
+sourceMap.BidsSession(ismissing(sourceMap.BidsSession)) = "";
+sourceMap.PreprocessingStatus(ismissing(sourceMap.PreprocessingStatus)) = "";
+sourceMap.PreprocessedSetPath(ismissing(sourceMap.PreprocessedSetPath)) = "";
+
+if ismember('ProcessingSubjectLabel', sourceMap.Properties.VariableNames)
+    sourceMap.ProcessingSubjectLabel = string(sourceMap.ProcessingSubjectLabel);
+    sourceMap.ProcessingSubjectLabel(ismissing(sourceMap.ProcessingSubjectLabel)) = "";
 end
 
-if ismember('PreprocessedSetPath', sourceMap.Properties.VariableNames)
-    sourceMap.PreprocessedSetPath = string(sourceMap.PreprocessedSetPath);
+if ismember('ProcessingSubjectFolder', sourceMap.Properties.VariableNames)
+    sourceMap.ProcessingSubjectFolder = string(sourceMap.ProcessingSubjectFolder);
+    sourceMap.ProcessingSubjectFolder(ismissing(sourceMap.ProcessingSubjectFolder)) = "";
 end
 
 if ismember('EEGStreamName', sourceMap.Properties.VariableNames)
     sourceMap.EEGStreamName = string(sourceMap.EEGStreamName);
+    sourceMap.EEGStreamName(ismissing(sourceMap.EEGStreamName)) = "";
 end
 
-%% Create or read DoQC
+if ismember('RawSetPath', sourceMap.Properties.VariableNames)
+    sourceMap.RawSetPath = string(sourceMap.RawSetPath);
+    sourceMap.RawSetPath(ismissing(sourceMap.RawSetPath)) = "";
+end
+
+if ismember('RawSetStatus', sourceMap.Properties.VariableNames)
+    sourceMap.RawSetStatus = string(sourceMap.RawSetStatus);
+    sourceMap.RawSetStatus(ismissing(sourceMap.RawSetStatus)) = "";
+end
+
+%% ========================================================================
+%  CREATE OR RESET DOQC
+%  ========================================================================
 
 if ~ismember('DoQC', sourceMap.Properties.VariableNames)
 
     sourceMap.DoQC = zeros(height(sourceMap), 1);
 
-    if ismember('PreprocessingStatus', sourceMap.Properties.VariableNames)
+    status = string(sourceMap.PreprocessingStatus);
+    status(ismissing(status)) = "";
 
-        status = string(sourceMap.PreprocessingStatus);
-
-        % Only rows that successfully produced a preprocessed file are selected.
-        sourceMap.DoQC(status == "completed") = 1;
-
-    elseif ismember('DoPreprocess', sourceMap.Properties.VariableNames)
-
-        sourceMap = ensure_numeric_column(sourceMap, 'DoPreprocess');
-        sourceMap.DoQC = sourceMap.DoPreprocess;
-
-    else
-
-        % Last fallback: check imported rows.
-        sourceMap.DoQC = sourceMap.DoImport;
-
-    end
+    sourceMap.DoQC(status == "completed") = 1;
 
     writetable(sourceMap, mappingFile);
 
     fprintf('\nDoQC column was not found.\n');
-    fprintf('Created DoQC automatically and saved it to:\n%s\n', mappingFile);
+    fprintf('Created DoQC from PreprocessingStatus == "completed" and saved it to:\n%s\n', mappingFile);
     fprintf('You can manually edit DoQC later:\n');
     fprintf('  DoQC = 1 -> check this row\n');
     fprintf('  DoQC = 0 -> skip this row\n');
@@ -125,27 +174,87 @@ else
 
     sourceMap = ensure_numeric_column(sourceMap, 'DoQC');
 
+    if reset_DoQC_from_PreprocessingStatus
+
+        sourceMap.DoQC = zeros(height(sourceMap), 1);
+
+        status = string(sourceMap.PreprocessingStatus);
+        status(ismissing(status)) = "";
+
+        sourceMap.DoQC(status == "completed") = 1;
+
+        writetable(sourceMap, mappingFile);
+
+        fprintf('\nDoQC column already existed.\n');
+        fprintf('Reset DoQC from PreprocessingStatus == "completed" because reset_DoQC_from_PreprocessingStatus = true.\n');
+        fprintf('Updated import table saved to:\n%s\n', mappingFile);
+
+    else
+
+        fprintf('\nDoQC column already existed.\n');
+        fprintf('Using existing DoQC values because reset_DoQC_from_PreprocessingStatus = false.\n');
+
+    end
+
 end
 
-%% Select rows from table
+%% ========================================================================
+%  SELECT ROWS TO CHECK
+%  ========================================================================
 
-rowsToCheck = find(sourceMap.DoQC == 1);
+sourceMap = ensure_numeric_column(sourceMap, 'DoQC');
 
-if isempty(rowsToCheck)
+candidateRows = find(sourceMap.DoQC == 1);
+
+if isempty(candidateRows)
     error('No rows with DoQC = 1 found in bemobil_import_table.csv.');
 end
+
+hasPreprocessedPath = strlength(strtrim(sourceMap.PreprocessedSetPath)) > 0;
+completedRows = sourceMap.PreprocessingStatus == "completed";
+
+validRows = candidateRows(hasPreprocessedPath(candidateRows) & completedRows(candidateRows));
+
+if isempty(validRows)
+
+    fprintf('\nRows with DoQC = 1 exist, but none have PreprocessingStatus == completed and non-empty PreprocessedSetPath.\n');
+    fprintf('Problem rows:\n');
+    disp(sourceMap(candidateRows, {'FileName', 'BidsSubject', 'BidsSession', ...
+                                   'DoImport', 'DoQC', ...
+                                   'PreprocessingStatus', 'PreprocessedSetPath'}));
+
+    error('No valid rows for preprocessing QC.');
+
+end
+
+% Safety: avoid checking the same preprocessed file more than once.
+preprocessedPathsForValidRows = sourceMap.PreprocessedSetPath(validRows);
+[~, uniqueIdx] = unique(preprocessedPathsForValidRows, 'stable');
+rowsToCheck = validRows(uniqueIdx);
 
 fprintf('\n============================================================\n');
 fprintf('PREPROCESSED EEG QUALITY CHECK STARTED\n');
 fprintf('============================================================\n');
-fprintf('Selection mode: table-driven\n');
-fprintf('Rows with DoQC = 1: %d\n', length(rowsToCheck));
+fprintf('Selection mode: table-driven preprocessing-QC\n');
+fprintf('Rows with DoQC = 1: %d\n', length(candidateRows));
+fprintf('Rows with completed preprocessing and PreprocessedSetPath: %d\n', length(validRows));
+fprintf('Unique preprocessed .set files to check: %d\n', length(rowsToCheck));
 fprintf('Import table:\n%s\n', mappingFile);
 fprintf('============================================================\n\n');
 
-%% Check loop
+fprintf('Rows selected for QC:\n');
+disp(sourceMap(rowsToCheck, {'FileName', 'BidsSubject', 'BidsSession', ...
+                             'PreprocessingStatus', 'PreprocessedSetPath'}));
+
+hide_all_figures();
+
+%% ========================================================================
+%  CHECK LOOP
+%  ========================================================================
 
 for rr = 1:length(rowsToCheck)
+
+    hide_all_figures();
 
     rowIdx = rowsToCheck(rr);
 
@@ -156,6 +265,7 @@ for rr = 1:length(rowsToCheck)
     originalXDFPath = char(sourceMap.XdfPath(rowIdx));
 
     if isnan(bidsSubject)
+
         warning('Invalid BidsSubject in row %d. Skipping this row.', rowIdx);
 
         sourceMap = update_qc_status( ...
@@ -167,20 +277,14 @@ for rr = 1:length(rowsToCheck)
 
         writetable(sourceMap, mappingFile);
         continue;
+
     end
 
-    %% Resolve processing label
-
-    % Preprocessing script used:
-    %   processingSubjectLabel = BidsSession
-    %   processingSubjectFolder = sub-BidsSession
-    %
-    % Example:
-    %   BidsSession = Pilot2p1day2sesExo1Sport
-    %   processingSubjectFolder = sub-Pilot2p1day2sesExo1Sport
+    %% --------------------------------------------------------------------
+    %  RESOLVE PROCESSING LABEL
+    %  --------------------------------------------------------------------
 
     if ismember('ProcessingSubjectLabel', sourceMap.Properties.VariableNames) && ...
-            ~ismissing(string(sourceMap.ProcessingSubjectLabel(rowIdx))) && ...
             strlength(strtrim(string(sourceMap.ProcessingSubjectLabel(rowIdx)))) > 0
 
         processingSubjectLabel = char(sourceMap.ProcessingSubjectLabel(rowIdx));
@@ -191,25 +295,25 @@ for rr = 1:length(rowsToCheck)
 
     end
 
-    processingSubjectFolder = ['sub-' processingSubjectLabel];
+    if ismember('ProcessingSubjectFolder', sourceMap.Properties.VariableNames) && ...
+            strlength(strtrim(string(sourceMap.ProcessingSubjectFolder(rowIdx)))) > 0
 
-    %% Resolve preprocessed .set path
+        processingSubjectFolder = char(sourceMap.ProcessingSubjectFolder(rowIdx));
 
-    preprocessedSetPath = "";
+    else
 
-    if ismember('PreprocessedSetPath', sourceMap.Properties.VariableNames)
-
-        candidatePath = string(sourceMap.PreprocessedSetPath(rowIdx));
-
-        if ~ismissing(candidatePath) && strlength(strtrim(candidatePath)) > 0
-            preprocessedSetPath = candidatePath;
-        end
+        processingSubjectFolder = ['sub-' processingSubjectLabel];
 
     end
 
-    if strlength(preprocessedSetPath) == 0
+    %% --------------------------------------------------------------------
+    %  RESOLVE PREPROCESSED .SET PATH
+    %  --------------------------------------------------------------------
 
-        % Fallback: reconstruct the expected path from BeMoBIL config.
+    preprocessedSetPath = string(sourceMap.PreprocessedSetPath(rowIdx));
+
+    if strlength(strtrim(preprocessedSetPath)) == 0
+
         preprocessedSetPath = string(fullfile( ...
             bemobil_config.study_folder, ...
             bemobil_config.EEG_preprocessing_data_folder, ...
@@ -253,7 +357,9 @@ for rr = 1:length(rowsToCheck)
 
     end
 
-    %% Prepare quality check output folder
+    %% --------------------------------------------------------------------
+    %  PREPARE QUALITY CHECK OUTPUT FOLDER
+    %  --------------------------------------------------------------------
 
     checkOutputFolder = fullfile( ...
         outputFolder, ...
@@ -275,7 +381,9 @@ for rr = 1:length(rowsToCheck)
         [processingSubjectFolder '_channel_locations.png'] ...
     );
 
-    %% Start diary log
+    %% --------------------------------------------------------------------
+    %  START DIARY LOG
+    %  --------------------------------------------------------------------
 
     if exist(summaryFile, 'file')
         delete(summaryFile);
@@ -297,12 +405,24 @@ for rr = 1:length(rowsToCheck)
     fprintf('Processing subject label:\n%s\n', processingSubjectLabel);
     fprintf('Processing folder:\n%s\n\n', processingSubjectFolder);
 
+    if ismember('RawSetPath', sourceMap.Properties.VariableNames)
+        fprintf('RawSetPath:\n%s\n\n', char(sourceMap.RawSetPath(rowIdx)));
+    end
+
+    if ismember('RawSetStatus', sourceMap.Properties.VariableNames)
+        fprintf('RawSetStatus:\n%s\n\n', char(sourceMap.RawSetStatus(rowIdx)));
+    end
+
     fprintf('Input preprocessed file:\n%s\n\n', preprocessedSetPath);
     fprintf('Quality check output folder:\n%s\n\n', checkOutputFolder);
 
-    %% Load EEG
+    %% --------------------------------------------------------------------
+    %  LOAD EEG
+    %  --------------------------------------------------------------------
 
     try
+
+        hide_all_figures();
 
         EEG = pop_loadset( ...
             'filename', setFilename, ...
@@ -310,6 +430,8 @@ for rr = 1:length(rowsToCheck)
         );
 
         EEG = eeg_checkset(EEG);
+
+        hide_all_figures();
 
     catch ME
 
@@ -328,7 +450,9 @@ for rr = 1:length(rowsToCheck)
 
     end
 
-    %% Basic information
+    %% --------------------------------------------------------------------
+    %  BASIC INFORMATION
+    %  --------------------------------------------------------------------
 
     fprintf('============================================================\n');
     fprintf('Basic EEG information\n');
@@ -342,7 +466,9 @@ for rr = 1:length(rowsToCheck)
 
     channelLabels = {EEG.chanlocs.labels}';
 
-    %% Source information check
+    %% --------------------------------------------------------------------
+    %  SOURCE INFORMATION CHECK
+    %  --------------------------------------------------------------------
 
     fprintf('\n============================================================\n');
     fprintf('Source information stored in EEG.etc\n');
@@ -388,13 +514,23 @@ for rr = 1:length(rowsToCheck)
             fprintf('CHECK: EEG.etc.source_eeg_stream_name does not exist.\n');
         end
 
+        if isfield(EEG.etc, 'event_based_trimming_disabled')
+            fprintf('event_based_trimming_disabled:\n%d\n', EEG.etc.event_based_trimming_disabled);
+        end
+
+        if isfield(EEG.etc, 'n_events_before_preprocessing')
+            fprintf('n_events_before_preprocessing:\n%d\n', EEG.etc.n_events_before_preprocessing);
+        end
+
     else
 
         fprintf('CHECK: EEG.etc does not exist.\n');
 
     end
 
-    %% ACC channel check
+    %% --------------------------------------------------------------------
+    %  ACC CHANNEL CHECK
+    %  --------------------------------------------------------------------
 
     fprintf('\n============================================================\n');
     fprintf('ACC channel check\n');
@@ -414,7 +550,9 @@ for rr = 1:length(rowsToCheck)
         fprintf('OK: ACC_X / ACC_Y / ACC_Z channels were removed.\n');
     end
 
-    %% Channel location check
+    %% --------------------------------------------------------------------
+    %  CHANNEL LOCATION CHECK
+    %  --------------------------------------------------------------------
 
     fprintf('\n============================================================\n');
     fprintf('Channel location check\n');
@@ -436,7 +574,9 @@ for rr = 1:length(rowsToCheck)
         disp(missingLocLabels);
     end
 
-    %% Event check
+    %% --------------------------------------------------------------------
+    %  EVENT CHECK
+    %  --------------------------------------------------------------------
 
     fprintf('\n============================================================\n');
     fprintf('Event check\n');
@@ -444,13 +584,16 @@ for rr = 1:length(rowsToCheck)
 
     if isempty(EEG.event)
         fprintf('NOTE: EEG.event is empty.\n');
-        fprintf('This is acceptable for the current basic preprocessing test.\n');
+        fprintf('This is acceptable for the current basic preprocessing check.\n');
         fprintf('However, gait-event-aligned PSD/ERSP still requires gait events later.\n');
     else
         fprintf('OK: Events exist. Number of events: %d\n', length(EEG.event));
+        fprintf('Note: this preprocessing script intentionally did not trim data based on events.\n');
     end
 
-    %% Existing BeMoBIL preprocessing figures check
+    %% --------------------------------------------------------------------
+    %  EXISTING BEMOBIL PREPROCESSING FIGURES CHECK
+    %  --------------------------------------------------------------------
 
     fprintf('\n============================================================\n');
     fprintf('Existing BeMoBIL preprocessing figures\n');
@@ -464,6 +607,7 @@ for rr = 1:length(rowsToCheck)
     };
 
     for i = 1:length(expectedFigures)
+
         figPath = fullfile(preprocFolder, expectedFigures{i});
 
         if exist(figPath, 'file')
@@ -471,6 +615,7 @@ for rr = 1:length(rowsToCheck)
         else
             fprintf('MISSING: %s\n', figPath);
         end
+
     end
 
     zaplineFiles = dir(fullfile(preprocFolder, '*zapline*.png'));
@@ -479,18 +624,24 @@ for rr = 1:length(rowsToCheck)
         fprintf('MISSING: No ZapLine PNG figure found.\n');
     else
         fprintf('FOUND ZapLine figure(s):\n');
+
         for i = 1:length(zaplineFiles)
             fprintf('%s\n', fullfile(zaplineFiles(i).folder, zaplineFiles(i).name));
         end
+
     end
 
-    %% Save channel location figure
+    %% --------------------------------------------------------------------
+    %  SAVE CHANNEL LOCATION FIGURE
+    %  --------------------------------------------------------------------
 
     fprintf('\n============================================================\n');
     fprintf('Saving electrode location plot\n');
     fprintf('============================================================\n');
 
     try
+
+        hide_all_figures();
 
         fig1 = figure('Color', 'w', 'Visible', 'off');
 
@@ -505,6 +656,7 @@ for rr = 1:length(rowsToCheck)
         fprintf('Saved:\n%s\n', locationFig);
 
         close(fig1);
+        hide_all_figures();
 
     catch ME
 
@@ -512,9 +664,13 @@ for rr = 1:length(rowsToCheck)
         fprintf('Reason:\n%s\n', ME.message);
         locationFig = "";
 
+        hide_all_figures();
+
     end
 
-    %% Final conclusion
+    %% --------------------------------------------------------------------
+    %  FINAL AUTOMATIC CHECK CONCLUSION
+    %  --------------------------------------------------------------------
 
     fprintf('\n============================================================\n');
     fprintf('Final automatic check conclusion\n');
@@ -554,25 +710,29 @@ for rr = 1:length(rowsToCheck)
 
     if isempty(EEG.event)
         fprintf('NOTE: Events are empty.\n');
+        eventNote = "events_empty";
     else
         fprintf('OK: Events exist.\n');
+        eventNote = "events_exist";
     end
 
     fprintf('\nCheck finished.\n');
 
     diary off;
 
-    %% Update import table with quality check status
+    %% --------------------------------------------------------------------
+    %  UPDATE IMPORT TABLE WITH QUALITY CHECK STATUS
+    %  --------------------------------------------------------------------
 
     if channelOK && srateOK && accOK && locOK
 
         qcStatus = "passed_basic_checks";
-        qcNotes  = "Events may still be empty; this is expected for current preprocessing test.";
+        qcNotes  = "Basic preprocessing checks passed. " + eventNote + ".";
 
     else
 
         qcStatus = "check_required";
-        qcNotes  = "One or more basic checks failed. See summary file.";
+        qcNotes  = "One or more basic checks failed. See summary file. " + eventNote + ".";
 
     end
 
@@ -585,6 +745,8 @@ for rr = 1:length(rowsToCheck)
 
     writetable(sourceMap, mappingFile);
 
+    hide_all_figures();
+
     fprintf('\n============================================================\n');
     fprintf('CHECK FINISHED FOR THIS FILE\n');
     fprintf('Summary saved to:\n%s\n', summaryFile);
@@ -594,13 +756,81 @@ for rr = 1:length(rowsToCheck)
 
 end
 
+hide_all_figures();
+
+%% ========================================================================
+%  FINAL REPORT
+%  ========================================================================
+
 fprintf('\n\n============================================================\n');
 fprintf('ALL SELECTED PREPROCESSING QC FINISHED\n');
 fprintf('============================================================\n');
 fprintf('Import table:\n%s\n', mappingFile);
-fprintf('Done.\n');
 
-%% Helper functions
+optsFinal = detectImportOptions(mappingFile, ...
+    'FileType', 'text', ...
+    'Delimiter', ',', ...
+    'VariableNamingRule', 'preserve');
+
+sourceMapFinal = readtable(mappingFile, optsFinal);
+
+if ismember('PreprocessingQCStatus', sourceMapFinal.Properties.VariableNames)
+
+    sourceMapFinal.PreprocessingQCStatus = string(sourceMapFinal.PreprocessingQCStatus);
+    sourceMapFinal.PreprocessingQCStatus(ismissing(sourceMapFinal.PreprocessingQCStatus)) = "";
+
+    fprintf('\nPreprocessing QC status summary:\n');
+
+    statusNonEmpty = sourceMapFinal.PreprocessingQCStatus(strlength(sourceMapFinal.PreprocessingQCStatus) > 0);
+    uniqueStatus = unique(statusNonEmpty, 'stable');
+
+    if isempty(uniqueStatus)
+        fprintf('  No preprocessing QC status entries found.\n');
+    else
+
+        for k = 1:numel(uniqueStatus)
+            thisStatus = uniqueStatus(k);
+            n = sum(statusNonEmpty == thisStatus);
+            fprintf('  %-45s %d\n', thisStatus, n);
+        end
+
+    end
+
+end
+
+fprintf('\nDone.\n');
+
+hide_all_figures();
+
+%% ========================================================================
+%  HELPER FUNCTIONS
+%  ========================================================================
+
+function hide_all_figures()
+
+    try
+        set(0, 'DefaultFigureVisible', 'off');
+        set(groot, 'DefaultFigureVisible', 'off');
+        set(0, 'ShowHiddenHandles', 'on');
+    catch
+    end
+
+    try
+        figs = findall(groot, 'Type', 'figure');
+
+        if ~isempty(figs)
+            set(figs, 'Visible', 'off');
+            close(figs);
+        end
+
+    catch
+        try
+            close all force;
+        catch
+        end
+    end
+
+end
 
 function label = make_bids_label(x)
 
@@ -618,9 +848,13 @@ function T = ensure_string_column(T, columnName)
     if ~ismember(columnName, T.Properties.VariableNames)
         T.(columnName) = strings(height(T), 1);
     else
+
         if ~isstring(T.(columnName))
             T.(columnName) = string(T.(columnName));
         end
+
+        T.(columnName)(ismissing(T.(columnName))) = "";
+
     end
 
 end

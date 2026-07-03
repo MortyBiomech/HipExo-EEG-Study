@@ -3,38 +3,52 @@
 %   2) import_table.m
 %   3) bemobil_import.m
 %   4) bemobil_process_all_EEG_data.m
-%   5) this AMICA-only script
+%   5) check_preprocessed_EEG.m
+%   6) this AMICA-only script
 %
 % This script:
 % 1. Reads bemobil_import_table.csv.
 % 2. Selects rows using DoAMICA.
-% 3. Loads the existing preprocessed .set file.
+% 3. Loads the existing preprocessed .set file from PreprocessedSetPath.
 % 4. Runs AMICA only.
 % 5. Updates bemobil_import_table.csv with AMICA status and output path.
 %
 % Important:
 % This script does NOT rerun basic preprocessing.
+% This script should only run AMICA for files that passed preprocessing QC.
 %
 % Table-driven control:
 %   DoAMICA = 1  -> run AMICA for this row
 %   DoAMICA = 0  -> skip this row
 %
-% If DoAMICA does not exist yet:
-%   - this script creates it automatically.
-%   - rows with PreprocessingStatus == "completed" are selected by default.
-%   - if PreprocessingStatus does not exist, it falls back to DoPreprocess.
+% Default behavior:
+%   If DoAMICA does not exist, it is created from:
+%       PreprocessingStatus == "completed"
+%       AND
+%       PreprocessingQCStatus == "passed_basic_checks"
+%
+%   If DoAMICA already exists, this script uses the existing table values.
+
 
 clear; clc; close all;
 
-%% Load central paths
+% Keep figures hidden during AMICA batch processing.
+set(0, 'DefaultFigureVisible', 'off');
+set(groot, 'DefaultFigureVisible', 'off');
+
+%% ========================================================================
+%  LOAD CENTRAL PATHS
+%  ========================================================================
 
 run(fullfile(fileparts(mfilename('fullpath')), 'paths.m'));
 
 if ~exist(mappingFile, 'file')
-    error('Import table not found:\n%s\nPlease run import_table.m, bemobil_import.m, and preprocessing first.', mappingFile);
+    error('Import table not found:\n%s\nPlease run import_table.m, bemobil_import_resample_merge.m, preprocessing, and QC first.', mappingFile);
 end
 
-%% AMICA safe current folder
+%% ========================================================================
+%  AMICA SAFE CURRENT FOLDER
+%  ========================================================================
 
 % Force MATLAB current folder to a simple local path.
 % This avoids AMICA problems with OneDrive paths, spaces, or non-ASCII characters.
@@ -47,31 +61,66 @@ cd(amicaTempFolder);
 
 fprintf('Current MATLAB folder for AMICA temp files:\n%s\n', pwd);
 
-%% AMICA settings
+%% ========================================================================
+%  AMICA SETTINGS
+%  ========================================================================
+
+% If true:
+%   DoAMICA will be overwritten from:
+%       PreprocessingStatus == "completed"
+%       AND
+%       PreprocessingQCStatus == "passed_basic_checks"
+%
+% If false:
+%   Existing DoAMICA values in the CSV are used.
+%
+% Recommended:
+%   false, because AMICA selection should be controlled manually by the table.
+reset_DoAMICA_from_PreprocessingQC = false;
 
 % Set to 1 if you want to recompute AMICA even if output already exists.
-% For first test, 1 is safer.
-% For large batch processing, usually use 0 after confirming the pipeline.
-force_recompute_amica = 1;
+% For the first technical run, 1 is fine.
+% After confirming the pipeline, use 0 to avoid recomputing completed AMICA results.
+force_recompute_amica = 0;
 
-%% Start EEGLAB
+%% ========================================================================
+%  INITIALIZE EEGLAB
+%  ========================================================================
 
-[ALLEEG, EEG, CURRENTSET, ALLCOM] = eeglab;
+if ~exist('ALLCOM', 'var')
+    [ALLEEG, EEG, CURRENTSET, ALLCOM] = eeglab('nogui');
+end
 
-%% Load BeMoBIL config
+hide_all_figures();
+
+%% ========================================================================
+%  LOAD BEMOBIL CONFIGURATION
+%  ========================================================================
 
 run(fullfile(scriptsFolder, 'bemobil_config_.m'));
 
-%% AMICA parameters
+hide_all_figures();
+
+%% ========================================================================
+%  AMICA PARAMETERS
+%  ========================================================================
 
 % Final analysis can stay at 2000.
-% For a quick test only, you may temporarily reduce this to 100.
+% For a quick technical test only, you may temporarily reduce this to 100.
 bemobil_config.AMICA_max_iter = 2000;
 
-% Keep 4 threads unless your PC crashes.
+% Keep 4 threads unless your PC crashes or becomes unstable.
 bemobil_config.max_threads = 4;
 
-%% Read import table
+fprintf('\nAMICA settings:\n');
+fprintf('AMICA_max_iter: %d\n', bemobil_config.AMICA_max_iter);
+fprintf('max_threads: %d\n', bemobil_config.max_threads);
+fprintf('force_recompute_amica: %d\n', force_recompute_amica);
+fprintf('reset_DoAMICA_from_PreprocessingQC: %d\n', reset_DoAMICA_from_PreprocessingQC);
+
+%% ========================================================================
+%  READ IMPORT TABLE
+%  ========================================================================
 
 optsImport = detectImportOptions(mappingFile, ...
     'FileType', 'text', ...
@@ -80,80 +129,105 @@ optsImport = detectImportOptions(mappingFile, ...
 
 sourceMap = readtable(mappingFile, optsImport);
 
-%% Check required columns
+fprintf('\nLoaded import table:\n%s\n', mappingFile);
+fprintf('Rows in import table: %d\n', height(sourceMap));
+
+%% ========================================================================
+%  CHECK REQUIRED COLUMNS
+%  ========================================================================
 
 requiredColumns = { ...
     'DoImport', ...
     'XdfPath', ...
     'FileName', ...
     'BidsSubject', ...
-    'BidsSession' ...
+    'BidsSession', ...
+    'PreprocessingStatus', ...
+    'PreprocessingQCStatus', ...
+    'PreprocessedSetPath' ...
 };
 
 for c = 1:length(requiredColumns)
     if ~ismember(requiredColumns{c}, sourceMap.Properties.VariableNames)
-        error('Import table is missing required column: %s', requiredColumns{c});
+        error(['Import table is missing required column: %s\n' ...
+               'Please run preprocessing and check_preprocessed_EEG_1.m first.'], ...
+               requiredColumns{c});
     end
 end
 
-%% Normalize important columns
+%% ========================================================================
+%  NORMALIZE IMPORTANT COLUMNS
+%  ========================================================================
 
 sourceMap = ensure_numeric_column(sourceMap, 'DoImport');
 sourceMap = ensure_numeric_column(sourceMap, 'BidsSubject');
 
-sourceMap.XdfPath     = string(sourceMap.XdfPath);
-sourceMap.FileName    = string(sourceMap.FileName);
-sourceMap.BidsSession = string(sourceMap.BidsSession);
+sourceMap.XdfPath               = string(sourceMap.XdfPath);
+sourceMap.FileName              = string(sourceMap.FileName);
+sourceMap.BidsSession           = string(sourceMap.BidsSession);
+sourceMap.PreprocessingStatus   = string(sourceMap.PreprocessingStatus);
+sourceMap.PreprocessingQCStatus = string(sourceMap.PreprocessingQCStatus);
+sourceMap.PreprocessedSetPath   = string(sourceMap.PreprocessedSetPath);
+
+sourceMap.XdfPath(ismissing(sourceMap.XdfPath)) = "";
+sourceMap.FileName(ismissing(sourceMap.FileName)) = "";
+sourceMap.BidsSession(ismissing(sourceMap.BidsSession)) = "";
+sourceMap.PreprocessingStatus(ismissing(sourceMap.PreprocessingStatus)) = "";
+sourceMap.PreprocessingQCStatus(ismissing(sourceMap.PreprocessingQCStatus)) = "";
+sourceMap.PreprocessedSetPath(ismissing(sourceMap.PreprocessedSetPath)) = "";
 
 if ismember('DoPreprocess', sourceMap.Properties.VariableNames)
     sourceMap = ensure_numeric_column(sourceMap, 'DoPreprocess');
 end
 
-if ismember('PreprocessingStatus', sourceMap.Properties.VariableNames)
-    sourceMap.PreprocessingStatus = string(sourceMap.PreprocessingStatus);
+if ismember('DoQC', sourceMap.Properties.VariableNames)
+    sourceMap = ensure_numeric_column(sourceMap, 'DoQC');
 end
 
 if ismember('ProcessingSubjectLabel', sourceMap.Properties.VariableNames)
     sourceMap.ProcessingSubjectLabel = string(sourceMap.ProcessingSubjectLabel);
+    sourceMap.ProcessingSubjectLabel(ismissing(sourceMap.ProcessingSubjectLabel)) = "";
 end
 
-if ismember('PreprocessedSetPath', sourceMap.Properties.VariableNames)
-    sourceMap.PreprocessedSetPath = string(sourceMap.PreprocessedSetPath);
+if ismember('ProcessingSubjectFolder', sourceMap.Properties.VariableNames)
+    sourceMap.ProcessingSubjectFolder = string(sourceMap.ProcessingSubjectFolder);
+    sourceMap.ProcessingSubjectFolder(ismissing(sourceMap.ProcessingSubjectFolder)) = "";
 end
 
 if ismember('EEGStreamName', sourceMap.Properties.VariableNames)
     sourceMap.EEGStreamName = string(sourceMap.EEGStreamName);
+    sourceMap.EEGStreamName(ismissing(sourceMap.EEGStreamName)) = "";
 end
 
-%% Create or read DoAMICA
+if ismember('RawSetPath', sourceMap.Properties.VariableNames)
+    sourceMap.RawSetPath = string(sourceMap.RawSetPath);
+    sourceMap.RawSetPath(ismissing(sourceMap.RawSetPath)) = "";
+end
+
+if ismember('RawSetStatus', sourceMap.Properties.VariableNames)
+    sourceMap.RawSetStatus = string(sourceMap.RawSetStatus);
+    sourceMap.RawSetStatus(ismissing(sourceMap.RawSetStatus)) = "";
+end
+
+%% ========================================================================
+%  CREATE OR READ DOAMICA
+%  ========================================================================
+
+readyForAMICA = ...
+    sourceMap.PreprocessingStatus == "completed" & ...
+    sourceMap.PreprocessingQCStatus == "passed_basic_checks" & ...
+    strlength(strtrim(sourceMap.PreprocessedSetPath)) > 0;
 
 if ~ismember('DoAMICA', sourceMap.Properties.VariableNames)
 
     sourceMap.DoAMICA = zeros(height(sourceMap), 1);
-
-    if ismember('PreprocessingStatus', sourceMap.Properties.VariableNames)
-
-        status = string(sourceMap.PreprocessingStatus);
-
-        % Only completed preprocessing rows are selected for AMICA by default.
-        sourceMap.DoAMICA(status == "completed") = 1;
-
-    elseif ismember('DoPreprocess', sourceMap.Properties.VariableNames)
-
-        sourceMap.DoAMICA = sourceMap.DoPreprocess;
-
-    else
-
-        % Last fallback: use imported rows.
-        sourceMap.DoAMICA = sourceMap.DoImport;
-
-    end
+    sourceMap.DoAMICA(readyForAMICA) = 1;
 
     writetable(sourceMap, mappingFile);
 
     fprintf('\nDoAMICA column was not found.\n');
-    fprintf('Created DoAMICA automatically and saved it to:\n%s\n', mappingFile);
-    fprintf('You can manually edit DoAMICA later:\n');
+    fprintf('Created DoAMICA from completed preprocessing + passed preprocessing QC and saved it to:\n%s\n', mappingFile);
+    fprintf('You can manually edit DoAMICA now:\n');
     fprintf('  DoAMICA = 1 -> run AMICA for this row\n');
     fprintf('  DoAMICA = 0 -> skip this row\n');
 
@@ -161,27 +235,96 @@ else
 
     sourceMap = ensure_numeric_column(sourceMap, 'DoAMICA');
 
+    if reset_DoAMICA_from_PreprocessingQC
+
+        sourceMap.DoAMICA = zeros(height(sourceMap), 1);
+        sourceMap.DoAMICA(readyForAMICA) = 1;
+
+        writetable(sourceMap, mappingFile);
+
+        fprintf('\nDoAMICA column already existed.\n');
+        fprintf('Reset DoAMICA from completed preprocessing + passed preprocessing QC because reset_DoAMICA_from_PreprocessingQC = true.\n');
+        fprintf('Updated import table saved to:\n%s\n', mappingFile);
+
+    else
+
+        fprintf('\nDoAMICA column already existed.\n');
+        fprintf('Using existing DoAMICA values from the table because reset_DoAMICA_from_PreprocessingQC = false.\n');
+
+    end
+
 end
 
-%% Select rows from table
+%% ========================================================================
+%  SELECT ROWS TO PROCESS
+%  ========================================================================
 
-rowsToProcess = find(sourceMap.DoAMICA == 1);
+sourceMap = ensure_numeric_column(sourceMap, 'DoAMICA');
 
-if isempty(rowsToProcess)
+candidateRows = find(sourceMap.DoAMICA == 1);
+
+if isempty(candidateRows)
     error('No rows with DoAMICA = 1 found in bemobil_import_table.csv.');
 end
+
+hasPreprocessedPath = strlength(strtrim(sourceMap.PreprocessedSetPath)) > 0;
+
+passedPreprocessing = sourceMap.PreprocessingStatus == "completed";
+passedQC = sourceMap.PreprocessingQCStatus == "passed_basic_checks";
+
+validRows = candidateRows( ...
+    hasPreprocessedPath(candidateRows) & ...
+    passedPreprocessing(candidateRows) & ...
+    passedQC(candidateRows) ...
+);
+
+if isempty(validRows)
+
+    fprintf('\nRows with DoAMICA = 1 exist, but none passed the AMICA selection gate.\n');
+    fprintf('Problem rows:\n');
+
+    disp(sourceMap(candidateRows, {'FileName', 'BidsSubject', 'BidsSession', ...
+                                   'DoAMICA', ...
+                                   'PreprocessingStatus', ...
+                                   'PreprocessingQCStatus', ...
+                                   'PreprocessedSetPath'}));
+
+    error('No valid rows for AMICA.');
+
+end
+
+% Safety: avoid running AMICA multiple times for the same preprocessed .set file.
+preprocessedPathsForValidRows = sourceMap.PreprocessedSetPath(validRows);
+[~, uniqueIdx] = unique(preprocessedPathsForValidRows, 'stable');
+rowsToProcess = validRows(uniqueIdx);
 
 fprintf('\n============================================================\n');
 fprintf('AMICA-ONLY PROCESSING STARTED\n');
 fprintf('============================================================\n');
-fprintf('Selection mode: table-driven\n');
-fprintf('Rows with DoAMICA = 1: %d\n', length(rowsToProcess));
+fprintf('Selection mode: table-driven AMICA after preprocessing QC\n');
+fprintf('Rows with DoAMICA = 1: %d\n', length(candidateRows));
+fprintf('Rows passing AMICA gate: %d\n', length(validRows));
+fprintf('Unique preprocessed .set files selected for AMICA: %d\n', length(rowsToProcess));
+fprintf('Files selected by DoAMICA table column will be processed.\n');
 fprintf('Import table:\n%s\n', mappingFile);
 fprintf('============================================================\n\n');
 
-%% AMICA loop
+fprintf('Rows selected for AMICA:\n');
+disp(sourceMap(rowsToProcess, {'FileName', 'BidsSubject', 'BidsSession', ...
+                               'DoAMICA', ...
+                               'PreprocessingStatus', ...
+                               'PreprocessingQCStatus', ...
+                               'PreprocessedSetPath'}));
+
+hide_all_figures();
+
+%% ========================================================================
+%  AMICA LOOP
+%  ========================================================================
 
 for r = 1:length(rowsToProcess)
+
+    hide_all_figures();
 
     rowIdx = rowsToProcess(r);
 
@@ -207,41 +350,40 @@ for r = 1:length(rowsToProcess)
 
     end
 
-    %% Resolve processing label
+    %% --------------------------------------------------------------------
+    %  RESOLVE PROCESSING LABEL
+    %  --------------------------------------------------------------------
 
     if ismember('ProcessingSubjectLabel', sourceMap.Properties.VariableNames) && ...
-            ~ismissing(string(sourceMap.ProcessingSubjectLabel(rowIdx))) && ...
             strlength(strtrim(string(sourceMap.ProcessingSubjectLabel(rowIdx)))) > 0
 
         processingSubjectLabel = char(sourceMap.ProcessingSubjectLabel(rowIdx));
 
     else
 
-        % Fallback:
-        % preprocessing script uses BidsSession as unique processing label.
         processingSubjectLabel = char(make_bids_label(string(bidsSession)));
 
     end
 
-    processingSubjectFolder = ['sub-' processingSubjectLabel];
+    if ismember('ProcessingSubjectFolder', sourceMap.Properties.VariableNames) && ...
+            strlength(strtrim(string(sourceMap.ProcessingSubjectFolder(rowIdx)))) > 0
 
-    %% Resolve preprocessed .set file path
+        processingSubjectFolder = char(sourceMap.ProcessingSubjectFolder(rowIdx));
 
-    preprocessedSetPath = "";
+    else
 
-    if ismember('PreprocessedSetPath', sourceMap.Properties.VariableNames)
-
-        candidatePath = string(sourceMap.PreprocessedSetPath(rowIdx));
-
-        if ~ismissing(candidatePath) && strlength(strtrim(candidatePath)) > 0
-            preprocessedSetPath = candidatePath;
-        end
+        processingSubjectFolder = ['sub-' processingSubjectLabel];
 
     end
 
-    if strlength(preprocessedSetPath) == 0
+    %% --------------------------------------------------------------------
+    %  RESOLVE PREPROCESSED .SET FILE PATH
+    %  --------------------------------------------------------------------
 
-        % Fallback: reconstruct expected preprocessed path.
+    preprocessedSetPath = string(sourceMap.PreprocessedSetPath(rowIdx));
+
+    if strlength(strtrim(preprocessedSetPath)) == 0
+
         preprocessedSetPath = string(fullfile( ...
             bemobil_config.study_folder, ...
             bemobil_config.EEG_preprocessing_data_folder, ...
@@ -263,7 +405,19 @@ for r = 1:length(rowsToProcess)
     fprintf('Imported BIDS session:\n%s\n', bidsSession);
     fprintf('Processing label:\n%s\n', processingSubjectLabel);
     fprintf('Processing folder:\n%s\n', processingSubjectFolder);
+    fprintf('DoAMICA:\n%d\n', sourceMap.DoAMICA(rowIdx));
+    fprintf('PreprocessingStatus:\n%s\n', char(sourceMap.PreprocessingStatus(rowIdx)));
+    fprintf('PreprocessingQCStatus:\n%s\n', char(sourceMap.PreprocessingQCStatus(rowIdx)));
     fprintf('Preprocessed file:\n%s\n', preprocessedSetPath);
+
+    if ismember('RawSetPath', sourceMap.Properties.VariableNames)
+        fprintf('RawSetPath:\n%s\n', char(sourceMap.RawSetPath(rowIdx)));
+    end
+
+    if ismember('RawSetStatus', sourceMap.Properties.VariableNames)
+        fprintf('RawSetStatus:\n%s\n', char(sourceMap.RawSetStatus(rowIdx)));
+    end
+
     fprintf('============================================================\n\n');
 
     if ~exist(preprocessedSetPath, 'file')
@@ -288,7 +442,9 @@ for r = 1:length(rowsToProcess)
     [preprocFolder, preprocFileNoExt, preprocExt] = fileparts(preprocessedSetPath);
     preprocFile = [preprocFileNoExt preprocExt];
 
-    %% Prepare AMICA status columns
+    %% --------------------------------------------------------------------
+    %  PREPARE AMICA STATUS COLUMNS
+    %  --------------------------------------------------------------------
 
     sourceMap = ensure_string_column(sourceMap, 'AMICAStatus');
     sourceMap = ensure_string_column(sourceMap, 'AMICADate');
@@ -303,15 +459,22 @@ for r = 1:length(rowsToProcess)
 
     writetable(sourceMap, mappingFile);
 
-    %% Reset EEGLAB variables for this AMICA run
+    %% --------------------------------------------------------------------
+    %  RESET EEGLAB VARIABLES FOR THIS AMICA RUN
+    %  --------------------------------------------------------------------
 
     STUDY = [];
     CURRENTSTUDY = 0;
     ALLEEG = [];
     CURRENTSET = [];
     EEG = [];
+    EEG_preprocessed = [];
 
-    %% Load existing preprocessed EEG
+    hide_all_figures();
+
+    %% --------------------------------------------------------------------
+    %  LOAD EXISTING PREPROCESSED EEG
+    %  --------------------------------------------------------------------
 
     fprintf('\nLoading existing preprocessed EEG:\n%s\n', preprocessedSetPath);
 
@@ -323,6 +486,8 @@ for r = 1:length(rowsToProcess)
         );
 
         EEG_preprocessed = eeg_checkset(EEG_preprocessed);
+
+        hide_all_figures();
 
     catch ME
 
@@ -338,13 +503,17 @@ for r = 1:length(rowsToProcess)
 
     end
 
-    %% Store source information inside EEG.etc again
+    %% --------------------------------------------------------------------
+    %  STORE SOURCE INFORMATION INSIDE EEG.ETC AGAIN
+    %  --------------------------------------------------------------------
 
     EEG_preprocessed.etc.source_original_xdf_name = originalXDFName;
     EEG_preprocessed.etc.source_original_xdf_path = originalXDFPath;
     EEG_preprocessed.etc.real_bids_subject = bidsSubject;
     EEG_preprocessed.etc.session_label = bidsSession;
     EEG_preprocessed.etc.processing_subject_label = processingSubjectLabel;
+    EEG_preprocessed.etc.preprocessing_status_for_amica = char(sourceMap.PreprocessingStatus(rowIdx));
+    EEG_preprocessed.etc.preprocessing_qc_status_for_amica = char(sourceMap.PreprocessingQCStatus(rowIdx));
 
     if ismember('EEGStreamName', sourceMap.Properties.VariableNames)
         EEG_preprocessed.etc.source_eeg_stream_name = char(sourceMap.EEGStreamName(rowIdx));
@@ -359,9 +528,49 @@ for r = 1:length(rowsToProcess)
     fprintf('Duration: %.2f seconds\n', EEG_preprocessed.xmax - EEG_preprocessed.xmin);
     fprintf('Events: %d\n', length(EEG_preprocessed.event));
 
-    %% Run AMICA only
+    %% --------------------------------------------------------------------
+    %  BASIC SAFETY CHECK BEFORE AMICA
+    %  --------------------------------------------------------------------
+
+    if EEG_preprocessed.nbchan ~= 64
+
+        warning('Unexpected channel count before AMICA. Expected 64, got %d. Skipping.', EEG_preprocessed.nbchan);
+
+        sourceMap = update_amica_status( ...
+            sourceMap, rowIdx, ...
+            "failed_unexpected_channel_count", ...
+            "Expected 64 channels before AMICA.", ...
+            "" ...
+        );
+
+        writetable(sourceMap, mappingFile);
+        continue;
+
+    end
+
+    if abs(EEG_preprocessed.srate - 250) > 0.001
+
+        warning('Unexpected sampling rate before AMICA. Expected 250 Hz, got %.2f Hz. Skipping.', EEG_preprocessed.srate);
+
+        sourceMap = update_amica_status( ...
+            sourceMap, rowIdx, ...
+            "failed_unexpected_sampling_rate", ...
+            "Expected 250 Hz sampling rate before AMICA.", ...
+            "" ...
+        );
+
+        writetable(sourceMap, mappingFile);
+        continue;
+
+    end
+
+    %% --------------------------------------------------------------------
+    %  RUN AMICA ONLY
+    %  --------------------------------------------------------------------
 
     try
+
+        hide_all_figures();
 
         bemobil_process_all_AMICA( ...
             ALLEEG, ...
@@ -371,7 +580,11 @@ for r = 1:length(rowsToProcess)
             bemobil_config, ...
             force_recompute_amica);
 
+        hide_all_figures();
+
     catch ME
+
+        hide_all_figures();
 
         sourceMap = update_amica_status( ...
             sourceMap, rowIdx, ...
@@ -385,7 +598,9 @@ for r = 1:length(rowsToProcess)
 
     end
 
-    %% Try to find AMICA output file
+    %% --------------------------------------------------------------------
+    %  TRY TO FIND AMICA OUTPUT FILE
+    %  --------------------------------------------------------------------
 
     amicaCandidates = { ...
         fullfile(outputFolder, ...
@@ -407,10 +622,12 @@ for r = 1:length(rowsToProcess)
     foundAMICASetPath = "";
 
     for k = 1:length(amicaCandidates)
+
         if exist(amicaCandidates{k}, 'file')
             foundAMICASetPath = string(amicaCandidates{k});
             break;
         end
+
     end
 
     % Extra fallback: recursive search inside outputFolder.
@@ -454,6 +671,8 @@ for r = 1:length(rowsToProcess)
 
     writetable(sourceMap, mappingFile);
 
+    hide_all_figures();
+
     fprintf('\n============================================================\n');
     fprintf('AMICA FINISHED FOR THIS FILE\n');
     fprintf('============================================================\n');
@@ -461,13 +680,81 @@ for r = 1:length(rowsToProcess)
 
 end
 
+hide_all_figures();
+
+%% ========================================================================
+%  FINAL REPORT
+%  ========================================================================
+
 fprintf('\n\n============================================================\n');
 fprintf('ALL SELECTED AMICA RUNS FINISHED\n');
 fprintf('============================================================\n');
 fprintf('Import table:\n%s\n', mappingFile);
-fprintf('Done.\n');
 
-%% Helper functions
+optsFinal = detectImportOptions(mappingFile, ...
+    'FileType', 'text', ...
+    'Delimiter', ',', ...
+    'VariableNamingRule', 'preserve');
+
+sourceMapFinal = readtable(mappingFile, optsFinal);
+
+if ismember('AMICAStatus', sourceMapFinal.Properties.VariableNames)
+
+    sourceMapFinal.AMICAStatus = string(sourceMapFinal.AMICAStatus);
+    sourceMapFinal.AMICAStatus(ismissing(sourceMapFinal.AMICAStatus)) = "";
+
+    fprintf('\nAMICA status summary:\n');
+
+    statusNonEmpty = sourceMapFinal.AMICAStatus(strlength(sourceMapFinal.AMICAStatus) > 0);
+    uniqueStatus = unique(statusNonEmpty, 'stable');
+
+    if isempty(uniqueStatus)
+        fprintf('  No AMICA status entries found.\n');
+    else
+
+        for k = 1:numel(uniqueStatus)
+            thisStatus = uniqueStatus(k);
+            n = sum(statusNonEmpty == thisStatus);
+            fprintf('  %-45s %d\n', thisStatus, n);
+        end
+
+    end
+
+end
+
+fprintf('\nDone.\n');
+
+hide_all_figures();
+
+%% ========================================================================
+%  HELPER FUNCTIONS
+%  ========================================================================
+
+function hide_all_figures()
+
+    try
+        set(0, 'DefaultFigureVisible', 'off');
+        set(groot, 'DefaultFigureVisible', 'off');
+        set(0, 'ShowHiddenHandles', 'on');
+    catch
+    end
+
+    try
+        figs = findall(groot, 'Type', 'figure');
+
+        if ~isempty(figs)
+            set(figs, 'Visible', 'off');
+            close(figs);
+        end
+
+    catch
+        try
+            close all force;
+        catch
+        end
+    end
+
+end
 
 function label = make_bids_label(x)
 
@@ -483,11 +770,17 @@ end
 function T = ensure_string_column(T, columnName)
 
     if ~ismember(columnName, T.Properties.VariableNames)
+
         T.(columnName) = strings(height(T), 1);
+
     else
+
         if ~isstring(T.(columnName))
             T.(columnName) = string(T.(columnName));
         end
+
+        T.(columnName)(ismissing(T.(columnName))) = "";
+
     end
 
 end
