@@ -54,12 +54,12 @@ end
 %
 % Recommended for the first run after a new import/audit.
 %
-% Later, if you want to manually edit DoPreprocess in the CSV,
+% if you want to manually edit DoPreprocess in the CSV,
 % set this to false.
-reset_DoPreprocess_from_Recommended = true;
+reset_DoPreprocess_from_Recommended = false;
 
 % Recompute BeMoBIL preprocessing output.
-force_recompute = 1;
+force_recompute = 0;
 
 %% ========================================================================
 %  INITIALIZE EEGLAB
@@ -429,18 +429,13 @@ for r = 1:length(rowsToProcess)
         [processingSubjectFolder '_' bemobil_config.preprocessed_filename] ...
     );
 
-    singleSubjectFolder = fullfile( ...
-        bemobil_config.study_folder, ...
-        bemobil_config.single_subject_analysis_folder, ...
-        processingSubjectFolder ...
-    );
-
-    if ~exist(singleSubjectFolder, 'dir')
-        mkdir(singleSubjectFolder);
-    end
+    % Do NOT create the single-subject analysis folder here.
+    % This script only performs basic preprocessing.
+    % The 5_single-subject-EEG-analysis folder belongs to the AMICA/ICA stage
+    % and is created by bemobil_process_all_AMICA.m.
 
     %% --------------------------------------------------------------------
-    %  UPDATE TABLE BEFORE PROCESSING
+    %  PREPARE TABLE COLUMNS BEFORE POSSIBLE SKIP
     %  --------------------------------------------------------------------
 
     sourceMap = ensure_string_column(sourceMap, 'ProcessingSubjectLabel');
@@ -455,6 +450,30 @@ for r = 1:length(rowsToProcess)
     sourceMap.ProcessingSubjectFolder(rowIdx) = string(processingSubjectFolder);
     sourceMap.ImportedSetPath(rowIdx) = string(importedSetPath);
     sourceMap.PreprocessedSetPath(rowIdx) = string(preprocessedSetPath);
+
+    %% --------------------------------------------------------------------
+    %  SKIP ALREADY COMPLETED PREPROCESSING IF NOT RECOMPUTING
+    %  --------------------------------------------------------------------
+
+    if force_recompute == 0 && ...
+            sourceMap.PreprocessingStatus(rowIdx) == "completed" && ...
+            exist(preprocessedSetPath, 'file') == 2
+
+        fprintf('\nPreprocessing already completed. Skipping this raw set:\n%s\n', preprocessedSetPath);
+
+        sourceMap.PreprocessingNotes(rowIdx) = ...
+            "Skipped because preprocessing was already completed and force_recompute = 0.";
+
+        writetable(sourceMap, mappingFile);
+
+        continue;
+
+    end
+
+    %% --------------------------------------------------------------------
+    %  UPDATE TABLE BEFORE PROCESSING
+    %  --------------------------------------------------------------------
+
     sourceMap.PreprocessingStatus(rowIdx) = "running";
     sourceMap.PreprocessingDate(rowIdx) = string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
     sourceMap.PreprocessingNotes(rowIdx) = "";

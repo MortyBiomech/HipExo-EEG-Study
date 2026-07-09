@@ -10,7 +10,7 @@ fieldtripFolder = fullfile(projectRoot, 'fieldtrip-20260601');
 
 rawDataFolder = fullfile(projectFolder, 'raw_data_PilotTest2');
 bemobilFolder = fullfile(projectFolder, 'BeMoBIL');
-scriptsFolder = fullfile(projectFolder, 'scripts_yadan_24062026');
+scriptsFolder = fullfile(projectFolder, 'scripts_yadan_04072026');
 outputFolder  = fullfile(projectFolder, 'output_data');
 
 summaryFile = fullfile(outputFolder, 'xdf_file_stream_summary.csv');

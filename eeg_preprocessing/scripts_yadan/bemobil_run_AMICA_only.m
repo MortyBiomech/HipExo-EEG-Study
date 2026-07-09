@@ -83,6 +83,12 @@ reset_DoAMICA_from_PreprocessingQC = false;
 % After confirming the pipeline, use 0 to avoid recomputing completed AMICA results.
 force_recompute_amica = 0;
 
+% If true and all expected AMICA/DIPFIT/output5 files already exist,
+% this script will only update bemobil_import_table.csv and skip rerunning AMICA.
+% This is useful after AMICA was already run with an older wrapper that did not
+% write DipfittedSetPath / PreprocessedICASetPath / CleanedICASetPath.
+skip_existing_complete_outputs = true;
+
 %% ========================================================================
 %  INITIALIZE EEGLAB
 %  ========================================================================
@@ -116,6 +122,7 @@ fprintf('\nAMICA settings:\n');
 fprintf('AMICA_max_iter: %d\n', bemobil_config.AMICA_max_iter);
 fprintf('max_threads: %d\n', bemobil_config.max_threads);
 fprintf('force_recompute_amica: %d\n', force_recompute_amica);
+fprintf('skip_existing_complete_outputs: %d\n', skip_existing_complete_outputs);
 fprintf('reset_DoAMICA_from_PreprocessingQC: %d\n', reset_DoAMICA_from_PreprocessingQC);
 
 %% ========================================================================
@@ -252,6 +259,57 @@ else
         fprintf('Using existing DoAMICA values from the table because reset_DoAMICA_from_PreprocessingQC = false.\n');
 
     end
+
+end
+
+%% ========================================================================
+%  CHECK FOR STALE AMICA RESULTS
+%  ========================================================================
+
+% If preprocessing was updated after AMICA, the old AMICA output no longer
+% belongs to the current preprocessed .set file. Such rows must be rerun.
+
+sourceMap = ensure_string_column(sourceMap, 'PreprocessingDate');
+sourceMap = ensure_string_column(sourceMap, 'AMICAStatus');
+sourceMap = ensure_string_column(sourceMap, 'AMICADate');
+sourceMap = ensure_string_column(sourceMap, 'AMICANotes');
+sourceMap = ensure_string_column(sourceMap, 'AMICASetPath');
+sourceMap = ensure_string_column(sourceMap, 'DipfittedSetPath');
+sourceMap = ensure_string_column(sourceMap, 'PreprocessedICASetPath');
+sourceMap = ensure_string_column(sourceMap, 'CleanedICASetPath');
+sourceMap = ensure_string_column(sourceMap, 'AMICAOutputStatus');
+
+preDate = parse_datetime_column(sourceMap.PreprocessingDate);
+amicaDate = parse_datetime_column(sourceMap.AMICADate);
+
+staleAMICA = ...
+    sourceMap.AMICAStatus == "completed" & ...
+    ~isnat(preDate) & ...
+    ~isnat(amicaDate) & ...
+    preDate > amicaDate;
+
+if any(staleAMICA)
+
+    fprintf('\nWARNING: Found %d stale AMICA row(s).\n', sum(staleAMICA));
+    fprintf('These rows have PreprocessingDate later than AMICADate.\n');
+    fprintf('They will be marked as stale_needs_rerun and DoAMICA will be set to 1.\n');
+
+    sourceMap.AMICAStatus(staleAMICA) = "stale_needs_rerun";
+    sourceMap.AMICANotes(staleAMICA) = ...
+        "PreprocessingDate is newer than AMICADate. AMICA output is stale and must be rerun.";
+    sourceMap.DoAMICA(staleAMICA) = 1;
+
+    writetable(sourceMap, mappingFile);
+
+    disp(sourceMap(staleAMICA, intersect({'FileName', 'BidsSubject', 'BidsSession', ...
+                                           'PreprocessingDate', 'AMICADate', ...
+                                           'PreprocessingStatus', 'PreprocessingQCStatus', ...
+                                           'AMICAStatus', 'DoAMICA'}, ...
+                                           sourceMap.Properties.VariableNames, 'stable')));
+
+else
+
+    fprintf('\nNo stale AMICA rows found based on PreprocessingDate and AMICADate.\n');
 
 end
 
@@ -443,19 +501,87 @@ for r = 1:length(rowsToProcess)
     preprocFile = [preprocFileNoExt preprocExt];
 
     %% --------------------------------------------------------------------
-    %  PREPARE AMICA STATUS COLUMNS
+    %  PREPARE AMICA STATUS COLUMNS BEFORE POSSIBLE SKIP
     %  --------------------------------------------------------------------
 
     sourceMap = ensure_string_column(sourceMap, 'AMICAStatus');
     sourceMap = ensure_string_column(sourceMap, 'AMICADate');
     sourceMap = ensure_string_column(sourceMap, 'AMICANotes');
     sourceMap = ensure_string_column(sourceMap, 'AMICASetPath');
+    sourceMap = ensure_string_column(sourceMap, 'DipfittedSetPath');
+    sourceMap = ensure_string_column(sourceMap, 'PreprocessedICASetPath');
+    sourceMap = ensure_string_column(sourceMap, 'CleanedICASetPath');
+    sourceMap = ensure_string_column(sourceMap, 'AMICAOutputStatus');
     sourceMap = ensure_string_column(sourceMap, 'PreprocessedSetPath');
 
     sourceMap.PreprocessedSetPath(rowIdx) = string(preprocessedSetPath);
+
+    [existingAMICASetPath, existingDipfittedSetPath, existingPreprocessedICASetPath, ...
+        existingCleanedICASetPath, existingOutputStatus, amicaCandidates] = find_all_amica_outputs( ...
+        outputFolder, ...
+        bemobil_config, ...
+        processingSubjectFolder);
+
+    %% --------------------------------------------------------------------
+    %  SKIP EXISTING COMPLETE AMICA OUTPUTS IF NOT RECOMPUTING
+    %  --------------------------------------------------------------------
+
+    if skip_existing_complete_outputs && ...
+            force_recompute_amica == 0 && ...
+            sourceMap.AMICAStatus(rowIdx) ~= "stale_needs_rerun" && ...
+            existingOutputStatus == "complete_outputs_verified"
+
+        fprintf('\nAll expected AMICA/DIPFIT/output5 files already exist. Updating CSV and skipping AMICA rerun.\n');
+        fprintf('AMICA set:\n%s\n', existingAMICASetPath);
+        fprintf('DIPFIT set:\n%s\n', existingDipfittedSetPath);
+        fprintf('Preprocessed+ICA set:\n%s\n', existingPreprocessedICASetPath);
+        fprintf('Cleaned ICA set:\n%s\n', existingCleanedICASetPath);
+
+        sourceMap.AMICAStatus(rowIdx) = "completed";
+        sourceMap.AMICASetPath(rowIdx) = existingAMICASetPath;
+        sourceMap.DipfittedSetPath(rowIdx) = existingDipfittedSetPath;
+        sourceMap.PreprocessedICASetPath(rowIdx) = existingPreprocessedICASetPath;
+        sourceMap.CleanedICASetPath(rowIdx) = existingCleanedICASetPath;
+        sourceMap.AMICAOutputStatus(rowIdx) = existingOutputStatus;
+        sourceMap.AMICANotes(rowIdx) = ...
+            "Skipped because all expected AMICA/DIPFIT/output5 files already exist, CSV paths were updated, and force_recompute_amica = 0.";
+
+        writetable(sourceMap, mappingFile);
+
+        continue;
+
+    end
+
+    if force_recompute_amica == 0 && ...
+            sourceMap.AMICAStatus(rowIdx) == "completed" && ...
+            existingOutputStatus ~= "complete_outputs_verified"
+
+        fprintf('\nWARNING: AMICAStatus is completed, but expected output files are incomplete.\n');
+        fprintf('Existing output status: %s\n', existingOutputStatus);
+        fprintf('This row will be rerun because completed AMICA cannot be verified.\n');
+        fprintf('Candidate paths checked:\n');
+
+        for k = 1:length(amicaCandidates)
+            fprintf('%s\n', amicaCandidates{k});
+        end
+
+    end
+
+    %% --------------------------------------------------------------------
+    %  UPDATE TABLE BEFORE AMICA
+    %  --------------------------------------------------------------------
+
     sourceMap.AMICAStatus(rowIdx) = "running";
     sourceMap.AMICADate(rowIdx) = string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
     sourceMap.AMICANotes(rowIdx) = "";
+
+    % Clear stale output paths before this AMICA run.
+    % New paths are written only after the current run outputs are verified.
+    sourceMap.AMICASetPath(rowIdx) = "";
+    sourceMap.DipfittedSetPath(rowIdx) = "";
+    sourceMap.PreprocessedICASetPath(rowIdx) = "";
+    sourceMap.CleanedICASetPath(rowIdx) = "";
+    sourceMap.AMICAOutputStatus(rowIdx) = "running_outputs_not_verified";
 
     writetable(sourceMap, mappingFile);
 
@@ -599,68 +725,57 @@ for r = 1:length(rowsToProcess)
     end
 
     %% --------------------------------------------------------------------
-    %  TRY TO FIND AMICA OUTPUT FILE
+    %  VERIFY ALL EXPECTED AMICA / DIPFIT / ICA OUTPUT FILES
     %  --------------------------------------------------------------------
 
-    amicaCandidates = { ...
-        fullfile(outputFolder, ...
-            bemobil_config.spatial_filters_folder, ...
-            processingSubjectFolder, ...
-            bemobil_config.spatial_filters_folder_AMICA, ...
-            [processingSubjectFolder '_' bemobil_config.amica_filename_output]), ...
-        fullfile(outputFolder, ...
-            bemobil_config.spatial_filters_folder, ...
-            bemobil_config.spatial_filters_folder_AMICA, ...
-            processingSubjectFolder, ...
-            [processingSubjectFolder '_' bemobil_config.amica_filename_output]), ...
-        fullfile(outputFolder, ...
-            bemobil_config.spatial_filters_folder, ...
-            processingSubjectFolder, ...
-            [processingSubjectFolder '_' bemobil_config.amica_filename_output]) ...
-    };
-
-    foundAMICASetPath = "";
-
-    for k = 1:length(amicaCandidates)
-
-        if exist(amicaCandidates{k}, 'file')
-            foundAMICASetPath = string(amicaCandidates{k});
-            break;
-        end
-
-    end
-
-    % Extra fallback: recursive search inside outputFolder.
-    if strlength(foundAMICASetPath) == 0
-
-        recursiveCandidates = dir(fullfile(outputFolder, '**', [processingSubjectFolder '*AMICA*.set']));
-
-        if isempty(recursiveCandidates)
-            recursiveCandidates = dir(fullfile(outputFolder, '**', [processingSubjectFolder '*amica*.set']));
-        end
-
-        if ~isempty(recursiveCandidates)
-            foundAMICASetPath = string(fullfile(recursiveCandidates(1).folder, recursiveCandidates(1).name));
-        end
-
-    end
+    [foundAMICASetPath, foundDipfittedSetPath, foundPreprocessedICASetPath, ...
+        foundCleanedICASetPath, amicaOutputStatus, amicaCandidates] = find_all_amica_outputs( ...
+        outputFolder, ...
+        bemobil_config, ...
+        processingSubjectFolder);
 
     sourceMap.AMICADate(rowIdx) = string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
+    sourceMap.AMICASetPath(rowIdx) = foundAMICASetPath;
+    sourceMap.DipfittedSetPath(rowIdx) = foundDipfittedSetPath;
+    sourceMap.PreprocessedICASetPath(rowIdx) = foundPreprocessedICASetPath;
+    sourceMap.CleanedICASetPath(rowIdx) = foundCleanedICASetPath;
+    sourceMap.AMICAOutputStatus(rowIdx) = amicaOutputStatus;
 
-    if strlength(foundAMICASetPath) > 0
+    if amicaOutputStatus == "complete_outputs_verified"
 
         sourceMap.AMICAStatus(rowIdx) = "completed";
-        sourceMap.AMICASetPath(rowIdx) = foundAMICASetPath;
         sourceMap.AMICANotes(rowIdx) = "";
 
-        fprintf('\nAMICA output found:\n%s\n', foundAMICASetPath);
+        fprintf('\nAMICA, DIPFIT, preprocessed+ICA, and cleaned ICA outputs found.\n');
+        fprintf('AMICA set:\n%s\n', foundAMICASetPath);
+        fprintf('DIPFIT set:\n%s\n', foundDipfittedSetPath);
+        fprintf('Preprocessed+ICA set:\n%s\n', foundPreprocessedICASetPath);
+        fprintf('Cleaned ICA set:\n%s\n', foundCleanedICASetPath);
+
+    elseif strlength(foundAMICASetPath) > 0 || ...
+            strlength(foundDipfittedSetPath) > 0 || ...
+            strlength(foundPreprocessedICASetPath) > 0 || ...
+            strlength(foundCleanedICASetPath) > 0
+
+        sourceMap.AMICAStatus(rowIdx) = "partial_outputs_missing";
+        sourceMap.AMICANotes(rowIdx) = ...
+            "AMICA function finished, but one or more expected AMICA/DIPFIT/ICA output files were missing.";
+
+        fprintf('\nWARNING: AMICA finished, but expected outputs are incomplete.\n');
+        fprintf('Output status: %s\n', amicaOutputStatus);
+        fprintf('Candidate paths checked:\n');
+
+        for k = 1:length(amicaCandidates)
+            fprintf('%s\n', amicaCandidates{k});
+        end
 
     else
 
         sourceMap.AMICAStatus(rowIdx) = "finished_but_output_file_not_found";
-        sourceMap.AMICANotes(rowIdx) = "AMICA function finished, but expected AMICA .set file was not found. Check 4_spatial-filters folder manually.";
+        sourceMap.AMICANotes(rowIdx) = ...
+            "AMICA function finished, but no expected AMICA/DIPFIT/ICA .set files were found.";
 
-        fprintf('\nWARNING: AMICA finished, but AMICA .set file was not found in expected candidate paths.\n');
+        fprintf('\nWARNING: AMICA finished, but no expected output .set files were found.\n');
         fprintf('Candidate paths checked:\n');
 
         for k = 1:length(amicaCandidates)
@@ -801,12 +916,163 @@ function T = ensure_numeric_column(T, columnName)
 
 end
 
+function dt = parse_datetime_column(x)
+
+    x = string(x);
+    x(ismissing(x)) = "";
+
+    dt = NaT(size(x));
+
+    formats = { ...
+        'yyyy-MM-dd HH:mm:ss', ...
+        'yyyy/M/d HH:mm:ss', ...
+        'yyyy/MM/dd HH:mm:ss', ...
+        'dd-MMM-yyyy HH:mm:ss' ...
+    };
+
+    for f = 1:numel(formats)
+
+        mask = strlength(strtrim(x)) > 0 & isnat(dt);
+
+        if ~any(mask)
+            break;
+        end
+
+        try
+            dt(mask) = datetime(x(mask), 'InputFormat', formats{f});
+        catch
+        end
+
+    end
+
+    % Last fallback: let MATLAB try automatic parsing.
+    mask = strlength(strtrim(x)) > 0 & isnat(dt);
+
+    if any(mask)
+        try
+            dt(mask) = datetime(x(mask));
+        catch
+        end
+    end
+
+end
+
+
+function [foundAMICASetPath, foundDipfittedSetPath, foundPreprocessedICASetPath, ...
+    foundCleanedICASetPath, outputStatus, allCandidates] = find_all_amica_outputs( ...
+    outputFolder, bemobil_config, processingSubjectFolder)
+
+    [foundAMICASetPath, c1] = find_expected_output_file( ...
+        outputFolder, ...
+        bemobil_config.spatial_filters_folder, ...
+        bemobil_config.spatial_filters_folder_AMICA, ...
+        processingSubjectFolder, ...
+        bemobil_config.amica_filename_output);
+
+    [foundDipfittedSetPath, c2] = find_expected_output_file( ...
+        outputFolder, ...
+        bemobil_config.spatial_filters_folder, ...
+        bemobil_config.spatial_filters_folder_AMICA, ...
+        processingSubjectFolder, ...
+        bemobil_config.dipfitted_filename);
+
+    [foundPreprocessedICASetPath, c3] = find_expected_output_file( ...
+        outputFolder, ...
+        bemobil_config.single_subject_analysis_folder, ...
+        '', ...
+        processingSubjectFolder, ...
+        bemobil_config.preprocessed_and_ICA_filename);
+
+    [foundCleanedICASetPath, c4] = find_expected_output_file( ...
+        outputFolder, ...
+        bemobil_config.single_subject_analysis_folder, ...
+        '', ...
+        processingSubjectFolder, ...
+        bemobil_config.single_subject_cleaned_ICA_filename);
+
+    allCandidates = [c1(:); c2(:); c3(:); c4(:)];
+
+    missing = strings(0, 1);
+
+    if strlength(foundAMICASetPath) == 0
+        missing(end+1, 1) = "AMICA";
+    end
+
+    if strlength(foundDipfittedSetPath) == 0
+        missing(end+1, 1) = "dipfitted";
+    end
+
+    if strlength(foundPreprocessedICASetPath) == 0
+        missing(end+1, 1) = "preprocessed_and_ICA";
+    end
+
+    if strlength(foundCleanedICASetPath) == 0
+        missing(end+1, 1) = "cleaned_with_ICA";
+    end
+
+    if isempty(missing)
+        outputStatus = "complete_outputs_verified";
+    else
+        outputStatus = "missing_" + join(missing, "_");
+    end
+
+end
+
+function [foundPath, candidates] = find_expected_output_file( ...
+    outputFolder, parentFolder, subFolder, processingSubjectFolder, filenameSuffix)
+
+    outputFilename = [processingSubjectFolder '_' filenameSuffix];
+
+    candidates = {};
+
+    if strlength(string(subFolder)) > 0
+
+        candidates = { ...
+            fullfile(outputFolder, parentFolder, subFolder, processingSubjectFolder, outputFilename), ...
+            fullfile(outputFolder, parentFolder, processingSubjectFolder, subFolder, outputFilename), ...
+            fullfile(outputFolder, parentFolder, processingSubjectFolder, outputFilename) ...
+        };
+
+    else
+
+        candidates = { ...
+            fullfile(outputFolder, parentFolder, processingSubjectFolder, outputFilename), ...
+            fullfile(outputFolder, parentFolder, outputFilename) ...
+        };
+
+    end
+
+    foundPath = "";
+
+    for k = 1:length(candidates)
+
+        if exist(candidates{k}, 'file') == 2
+            foundPath = string(candidates{k});
+            return;
+        end
+
+    end
+
+    % Strict recursive fallback by exact filename only.
+    recursiveCandidates = dir(fullfile(outputFolder, '**', outputFilename));
+
+    if ~isempty(recursiveCandidates)
+        foundPath = string(fullfile(recursiveCandidates(1).folder, recursiveCandidates(1).name));
+    end
+
+end
+
+
 function T = update_amica_status(T, rowIdx, statusValue, notesValue, setPathValue)
 
     T = ensure_string_column(T, 'AMICAStatus');
     T = ensure_string_column(T, 'AMICADate');
     T = ensure_string_column(T, 'AMICANotes');
     T = ensure_string_column(T, 'AMICASetPath');
+    T = ensure_string_column(T, 'DipfittedSetPath');
+    T = ensure_string_column(T, 'PreprocessedICASetPath');
+    T = ensure_string_column(T, 'CleanedICASetPath');
+    T = ensure_string_column(T, 'AMICAOutputStatus');
 
     T.AMICAStatus(rowIdx) = string(statusValue);
     T.AMICANotes(rowIdx) = string(notesValue);

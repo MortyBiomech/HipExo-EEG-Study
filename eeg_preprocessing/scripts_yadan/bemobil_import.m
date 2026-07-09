@@ -9,7 +9,7 @@
 %   5) Audit raw .set files per BidsSubject + BidsSession
 %   6) Automatically repair sessions that only have *_old.set files
 %      - old rec files are loaded
-%      - near-500 Hz files are metadata-normalized to exactly 500 Hz
+%      - near-500 Hz files are resampled to exactly 500 Hz using pop_resample
 %      - clearly abnormal files are skipped
 %      - valid rec files are merged into a current non-old session-level *_EEG.set
 %   7) Audit again
@@ -40,13 +40,23 @@ cleanBidsSessionsBeforeImport = true;
 cleanRawSetsBeforeBids2Set = true;
 
 % Raw EEG target sampling rate.
-% This is metadata-normalized only during repair.
-% Real downsampling to 250 Hz should happen later during preprocessing.
+% Raw EEGLAB output is kept at 500 Hz here.
+% Real downsampling to 250 Hz happens later during BeMoBIL preprocessing.
 targetRawSrate = 500;
 
-% Tolerance for treating near-500 Hz as 500 Hz.
-% For 500 Hz, this allows 495-505 Hz.
-srateToleranceHz = max(5, targetRawSrate * 0.01);
+% Maximum allowed deviation from targetRawSrate for automatic old-set repair.
+%
+% Important:
+% This script does NOT perform metadata-only sampling-rate normalization anymore.
+% Old files within this tolerance are truly resampled to targetRawSrate using pop_resample.
+% Files outside this tolerance are treated as unsafe and skipped.
+%
+% Example:
+%   499.242 Hz -> accepted and pop_resampled to 500 Hz
+%   498.000 Hz -> accepted and pop_resampled to 500 Hz
+%   478.000 Hz -> skipped
+%   16.000 Hz  -> skipped
+srateToleranceHz = 2;
 
 % Minimum valid run duration for raw EEG.
 % Your runs are usually around 5-6 minutes.
@@ -815,7 +825,7 @@ function auditTable = audit_raw_set_files(importTable, bidsFolder, setFolder, au
         elseif isempty(sessionSet) && isempty(currentRecSets) && ~isempty(oldSetsFound)
 
             thisStatus = "PROBLEM_only_old_sets";
-            thisRecommendation = "Only *_old.set files exist. This script will try metadata-only recovery for near-500 Hz old rec files.";
+            thisRecommendation = "Only *_old.set files exist. This script will try pop_resample recovery for near-500 Hz old rec files.";
 
         else
 
@@ -965,7 +975,7 @@ function repairLog = repair_only_old_raw_sets(auditTable, setFolder, repairLogFi
 
                     EEG = eeg_checkset(EEG);
 
-                    fprintf('\nLoaded rec%d before metadata normalization:\n', recNums(k));
+                    fprintf('\nLoaded rec%d before resampling repair:\n', recNums(k));
                     fprintf('  file     = %s\n', oldRecFiles(k).name);
                     fprintf('  channels = %d\n', EEG.nbchan);
                     fprintf('  srate    = %.10f Hz\n', EEG.srate);
@@ -973,7 +983,7 @@ function repairLog = repair_only_old_raw_sets(auditTable, setFolder, repairLogFi
                     fprintf('  duration = %.6f sec\n', (EEG.pnts - 1) / double(EEG.srate));
                     fprintf('  events   = %d\n', numel(EEG.event));
 
-                    [useThisEEG, EEG, skipReason] = normalize_raw_eeg_metadata_only( ...
+                    [useThisEEG, EEG, skipReason] = repair_raw_eeg_by_resampling( ...
                         EEG, targetSrate, srateToleranceHz, minDurationSec);
 
                     if ~useThisEEG
@@ -986,7 +996,7 @@ function repairLog = repair_only_old_raw_sets(auditTable, setFolder, repairLogFi
 
                     end
 
-                    fprintf('Loaded rec%d after metadata normalization:\n', recNums(k));
+                    fprintf('Loaded rec%d after resampling repair:\n', recNums(k));
                     fprintf('  channels = %d\n', EEG.nbchan);
                     fprintf('  srate    = %.10f Hz\n', EEG.srate);
                     fprintf('  samples  = %d\n', EEG.pnts);
@@ -1038,8 +1048,9 @@ function repairLog = repair_only_old_raw_sets(auditTable, setFolder, repairLogFi
                 EEG.etc.recovered_datetime = string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
                 EEG.etc.recovered_source_old_files = validSourceFiles;
                 EEG.etc.recovered_skipped_old_files = skippedFiles;
-                EEG.etc.recovered_metadata_only_srate_normalization = true;
+                EEG.etc.recovered_metadata_only_srate_normalization = false;
                 EEG.etc.recovered_target_srate = targetSrate;
+                EEG.etc.recovered_resample_method = "pop_resample";
                 EEG.etc.recovered_srate_tolerance_hz = srateToleranceHz;
                 EEG.etc.recovered_min_duration_sec = minDurationSec;
 
@@ -1054,7 +1065,7 @@ function repairLog = repair_only_old_raw_sets(auditTable, setFolder, repairLogFi
                     fprintf('SUCCESS: recovered file created:\n%s\n', outputPath);
 
                     repairLog = [repairLog; make_repair_log_row(subj, sessionName, true, ...
-                        "recovered_from_old_rec_files_metadata_only", string(outputPath), join(skippedFiles, "; "))];
+                        "recovered_from_old_rec_files_pop_resampled", string(outputPath), join(skippedFiles, "; "))];
 
                 else
 
@@ -1077,7 +1088,7 @@ function repairLog = repair_only_old_raw_sets(auditTable, setFolder, repairLogFi
 
                 EEG = eeg_checkset(EEG);
 
-                fprintf('\nLoaded old session-level file before metadata normalization:\n');
+                fprintf('\nLoaded old session-level file before resampling repair:\n');
                 fprintf('  file     = %s\n', oldFile.name);
                 fprintf('  channels = %d\n', EEG.nbchan);
                 fprintf('  srate    = %.10f Hz\n', EEG.srate);
@@ -1085,15 +1096,15 @@ function repairLog = repair_only_old_raw_sets(auditTable, setFolder, repairLogFi
                 fprintf('  duration = %.6f sec\n', (EEG.pnts - 1) / double(EEG.srate));
                 fprintf('  events   = %d\n', numel(EEG.event));
 
-                [useThisEEG, EEG, skipReason] = normalize_raw_eeg_metadata_only( ...
+                [useThisEEG, EEG, skipReason] = repair_raw_eeg_by_resampling( ...
                     EEG, targetSrate, srateToleranceHz, minDurationSec);
 
                 if ~useThisEEG
 
-                    warning('Old session-level file is not valid for metadata-only repair: %s', skipReason);
+                    warning('Old session-level file is not valid for resampling repair: %s', skipReason);
 
                     repairLog = [repairLog; make_repair_log_row(subj, sessionName, false, ...
-                        "old_session_file_failed_metadata_check", "", string(oldFile.name) + " [" + string(skipReason) + "]")];
+                        "old_session_file_failed_resample_check", "", string(oldFile.name) + " [" + string(skipReason) + "]")];
 
                     continue;
 
@@ -1105,8 +1116,9 @@ function repairLog = repair_only_old_raw_sets(auditTable, setFolder, repairLogFi
                 EEG.etc.recovered_datetime = string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
                 EEG.etc.recovered_source_old_files = string(oldFile.name);
                 EEG.etc.recovered_skipped_old_files = strings(0, 1);
-                EEG.etc.recovered_metadata_only_srate_normalization = true;
+                EEG.etc.recovered_metadata_only_srate_normalization = false;
                 EEG.etc.recovered_target_srate = targetSrate;
+                EEG.etc.recovered_resample_method = "pop_resample";
                 EEG.etc.recovered_srate_tolerance_hz = srateToleranceHz;
                 EEG.etc.recovered_min_duration_sec = minDurationSec;
 
@@ -1121,7 +1133,7 @@ function repairLog = repair_only_old_raw_sets(auditTable, setFolder, repairLogFi
                     fprintf('SUCCESS: recovered file created:\n%s\n', outputPath);
 
                     repairLog = [repairLog; make_repair_log_row(subj, sessionName, true, ...
-                        "recovered_from_old_session_file_metadata_only", string(outputPath), "")];
+                        "recovered_from_old_session_file_pop_resampled", string(outputPath), "")];
 
                 else
 
@@ -1161,7 +1173,7 @@ function repairLog = repair_only_old_raw_sets(auditTable, setFolder, repairLogFi
 
 end
 
-function [useThisEEG, EEG, reason] = normalize_raw_eeg_metadata_only(EEG, targetSrate, srateToleranceHz, minDurationSec)
+function [useThisEEG, EEG, reason] = repair_raw_eeg_by_resampling(EEG, targetSrate, srateToleranceHz, minDurationSec)
 
     useThisEEG = false;
     reason = "";
@@ -1194,36 +1206,108 @@ function [useThisEEG, EEG, reason] = normalize_raw_eeg_metadata_only(EEG, target
 
     end
 
+    if ~exist('pop_resample', 'file')
+
+        reason = "pop_resample_not_found";
+        return;
+
+    end
+
     oldSrate = double(EEG.srate);
+    oldPnts = double(EEG.pnts);
+    oldXmin = double(EEG.xmin);
+    oldXmax = double(EEG.xmax);
+    oldDurationSec = (oldPnts - 1) / oldSrate;
+
     srateDiff = abs(oldSrate - targetSrate);
 
     if srateDiff > srateToleranceHz
 
-        reason = sprintf('srate_too_far_from_target_old_%.10f_target_%.2f', oldSrate, targetSrate);
+        reason = sprintf('srate_too_far_from_target_old_%.10f_target_%.2f_tolerance_%.3f', ...
+            oldSrate, targetSrate, srateToleranceHz);
         return;
 
     end
 
-    durationSec = (double(EEG.pnts) - 1) / oldSrate;
+    if oldDurationSec < minDurationSec
 
-    if durationSec < minDurationSec
-
-        reason = sprintf('duration_too_short_%.6f_sec', durationSec);
+        reason = sprintf('duration_too_short_%.6f_sec', oldDurationSec);
         return;
 
     end
 
-    fprintf('  EEG.srate %.10f Hz is close to %.2f Hz.\n', oldSrate, targetSrate);
-    fprintf('  Metadata-only normalization. No pop_resample.\n');
+    EEG.etc.repair_original_srate = oldSrate;
+    EEG.etc.repair_original_pnts = oldPnts;
+    EEG.etc.repair_original_xmin = oldXmin;
+    EEG.etc.repair_original_xmax = oldXmax;
+    EEG.etc.repair_original_duration_sec = oldDurationSec;
+    EEG.etc.repair_target_srate = targetSrate;
+    EEG.etc.repair_srate_tolerance_hz = srateToleranceHz;
 
-    EEG.srate = targetSrate;
-    EEG.xmin = 0;
-    EEG.xmax = (EEG.pnts - 1) / EEG.srate;
+    if srateDiff < 1e-9
 
-    EEG = eeg_checkset(EEG);
+        fprintf('  EEG.srate is already %.10f Hz. No resampling needed.\n', oldSrate);
+
+        EEG.etc.repair_resampled_to_target_srate = false;
+        EEG.etc.repair_resample_method = "none_already_target_srate";
+
+        EEG = eeg_checkset(EEG);
+
+    else
+
+        fprintf('  EEG.srate %.10f Hz is within %.3f Hz of target %.2f Hz.\n', ...
+            oldSrate, srateToleranceHz, targetSrate);
+        fprintf('  Resampling with pop_resample. This changes the sample grid; it is NOT metadata-only.\n');
+
+        EEG = pop_resample(EEG, targetSrate);
+        EEG = eeg_checkset(EEG);
+
+        EEG.etc.repair_resampled_to_target_srate = true;
+        EEG.etc.repair_resample_method = "pop_resample";
+
+    end
+
+    newSrate = double(EEG.srate);
+    newPnts = double(EEG.pnts);
+    newDurationSec = (newPnts - 1) / newSrate;
+
+    EEG.etc.repair_new_srate = newSrate;
+    EEG.etc.repair_new_pnts = newPnts;
+    EEG.etc.repair_new_xmin = double(EEG.xmin);
+    EEG.etc.repair_new_xmax = double(EEG.xmax);
+    EEG.etc.repair_new_duration_sec = newDurationSec;
+    EEG.etc.repair_duration_difference_sec = newDurationSec - oldDurationSec;
+
+    if abs(newSrate - targetSrate) > 1e-6
+
+        reason = sprintf('resample_failed_new_srate_%.10f_target_%.2f', newSrate, targetSrate);
+        return;
+
+    end
+
+    if newDurationSec < minDurationSec
+
+        reason = sprintf('resampled_duration_too_short_%.6f_sec', newDurationSec);
+        return;
+
+    end
+
+    fprintf('  Repair result:\n');
+    fprintf('    old srate    = %.10f Hz\n', oldSrate);
+    fprintf('    new srate    = %.10f Hz\n', newSrate);
+    fprintf('    old samples  = %.0f\n', oldPnts);
+    fprintf('    new samples  = %.0f\n', newPnts);
+    fprintf('    old duration = %.6f sec\n', oldDurationSec);
+    fprintf('    new duration = %.6f sec\n', newDurationSec);
+    fprintf('    duration diff = %.9f sec\n', newDurationSec - oldDurationSec);
 
     useThisEEG = true;
-    reason = "OK_metadata_normalized";
+
+    if srateDiff < 1e-9
+        reason = "OK_already_target_srate";
+    else
+        reason = "OK_pop_resampled";
+    end
 
 end
 
