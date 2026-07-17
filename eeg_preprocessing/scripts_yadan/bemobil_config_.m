@@ -142,6 +142,11 @@ bemobil_config.AMICA_reject_sigma_threshold = 3; % default 3, the sigma threshol
 bemobil_config.AMICA_max_iter = 2000; % default 2000, the maximum number of iterations AMICA will run.
 bemobil_config.max_threads = 4; % default 4
 
+% Do not delete or ASR-reconstruct continuous time points before AMICA.
+% AMICA autorejected samples are retained in the final continuous EEG and
+% stored in EEG.etc.bad_samples / remove_data_intervals for later epoch QC.
+bemobil_config.use_reject_continuous = 0;
+
 % for warping the electrode locations to the standard 10-20 locations if you have an equidistand channel layout with
 % information about the overlap with the standard 10-20 layout. ideally find 5 electrodes (central, front, back, left,
 % right) that have a corresponding 10-20 electrode and enter them here. leave empty if using standard locations!
@@ -162,7 +167,7 @@ bemobil_config.iclabel_classifier = 'lite';
 % 'Brain', 'Muscle', 'Eye', 'Heart', 'Line Noise', 'Channel Noise', 'Other'
 % bemobil_config.iclabel_classes = [1]; % this setting removes everything that is not brain
 % bemobil_config.iclabel_classes = [1 7]; % this setting removes everything that is classified as an artifact IC, but not brain, and not "other"
-bemobil_config.iclabel_classes = [1 2 4 5 6 7]; % this setting only removes eye components
+bemobil_config.iclabel_classes = [1 2 4 5 6 7]; % cleaned_with_ICA removes only dominant Eye ICs; use preprocessed_and_ICA for expert cortical IC selection
 
 % if the threshold is set to -1, the popularity classifier is used (i.e. every IC gets the class with the highest
 % probability), if it is set to a value, the summed score of the iclabel_classes must be higher than this threshold to

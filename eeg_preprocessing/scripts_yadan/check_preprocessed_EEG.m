@@ -32,7 +32,7 @@ set(groot, 'DefaultFigureVisible', 'off');
 run(fullfile(fileparts(mfilename('fullpath')), 'paths.m'));
 
 if ~exist(mappingFile, 'file')
-    error('Import table not found:\n%s\nPlease run import_table.m, bemobil_import_resample_merge.m, and preprocessing first.', mappingFile);
+    error('Import table not found:\n%s\nPlease run import_table.m, bemobil_import.m, and preprocessing first.', mappingFile);
 end
 
 %% ========================================================================
@@ -41,6 +41,14 @@ end
 
 expectedChannels = 64;
 expectedSrate    = 250;
+rankSampleLimit  = 10000;
+
+% Quantitative residual line-noise review. The value is the 50 Hz band
+% power relative to neighboring bands. Values above this threshold require
+% review even if ZapLine metadata exists.
+lineNoiseFrequencyHz = 50;
+maxLineNoisePeakDb   = 8;
+maxInterpolatedChannelFraction = 0.20;
 
 % If true:
 %   DoQC will be overwritten from PreprocessingStatus == "completed".
@@ -49,7 +57,7 @@ expectedSrate    = 250;
 %
 % Later, if you want to manually edit DoQC in the CSV,
 % set this to false.
-reset_DoQC_from_PreprocessingStatus = true;
+reset_DoQC_from_PreprocessingStatus = false;
 
 %% ========================================================================
 %  INITIALIZE EEGLAB
@@ -65,7 +73,7 @@ hide_all_figures();
 %  LOAD BEMOBIL CONFIGURATION
 %  ========================================================================
 
-run(fullfile(scriptsFolder, 'bemobil_config_.m'));
+run(fullfile(fileparts(mfilename('fullpath')), 'bemobil_config_.m'));
 
 hide_all_figures();
 
@@ -94,13 +102,14 @@ requiredColumns = { ...
     'BidsSubject', ...
     'BidsSession', ...
     'PreprocessingStatus', ...
-    'PreprocessedSetPath' ...
+    'PreprocessedSetPath', ...
+    'PreprocessingInputSignature' ...
 };
 
 for c = 1:length(requiredColumns)
     if ~ismember(requiredColumns{c}, sourceMap.Properties.VariableNames)
         error(['Import table is missing required column: %s\n' ...
-               'Please run bemobil_process_all_EEG_data_1.m first.'], ...
+               'Please run bemobil_process_all_EEG_data.m first.'], ...
                requiredColumns{c});
     end
 end
@@ -117,12 +126,14 @@ sourceMap.FileName            = string(sourceMap.FileName);
 sourceMap.BidsSession         = string(sourceMap.BidsSession);
 sourceMap.PreprocessingStatus = string(sourceMap.PreprocessingStatus);
 sourceMap.PreprocessedSetPath = string(sourceMap.PreprocessedSetPath);
+sourceMap.PreprocessingInputSignature = string(sourceMap.PreprocessingInputSignature);
 
 sourceMap.XdfPath(ismissing(sourceMap.XdfPath)) = "";
 sourceMap.FileName(ismissing(sourceMap.FileName)) = "";
 sourceMap.BidsSession(ismissing(sourceMap.BidsSession)) = "";
 sourceMap.PreprocessingStatus(ismissing(sourceMap.PreprocessingStatus)) = "";
 sourceMap.PreprocessedSetPath(ismissing(sourceMap.PreprocessedSetPath)) = "";
+sourceMap.PreprocessingInputSignature(ismissing(sourceMap.PreprocessingInputSignature)) = "";
 
 if ismember('ProcessingSubjectLabel', sourceMap.Properties.VariableNames)
     sourceMap.ProcessingSubjectLabel = string(sourceMap.ProcessingSubjectLabel);
@@ -173,13 +184,12 @@ if ~ismember('DoQC', sourceMap.Properties.VariableNames)
 else
 
     sourceMap = ensure_numeric_column(sourceMap, 'DoQC');
+    status = string(sourceMap.PreprocessingStatus);
+    status(ismissing(status)) = "";
 
     if reset_DoQC_from_PreprocessingStatus
 
         sourceMap.DoQC = zeros(height(sourceMap), 1);
-
-        status = string(sourceMap.PreprocessingStatus);
-        status(ismissing(status)) = "";
 
         sourceMap.DoQC(status == "completed") = 1;
 
@@ -191,8 +201,13 @@ else
 
     else
 
+        missingDoQC = isnan(sourceMap.DoQC);
+        sourceMap.DoQC(missingDoQC) = 0;
+        sourceMap.DoQC(missingDoQC & status == "completed") = 1;
+        writetable(sourceMap, mappingFile);
+
         fprintf('\nDoQC column already existed.\n');
-        fprintf('Using existing DoQC values because reset_DoQC_from_PreprocessingStatus = false.\n');
+        fprintf('Preserved explicit DoQC values and filled only missing values from PreprocessingStatus.\n');
 
     end
 
@@ -257,6 +272,7 @@ for rr = 1:length(rowsToCheck)
     hide_all_figures();
 
     rowIdx = rowsToCheck(rr);
+    sessionRows = session_peer_rows(sourceMap, rowIdx);
 
     bidsSubject = sourceMap.BidsSubject(rowIdx);
     bidsSession = char(sourceMap.BidsSession(rowIdx));
@@ -465,6 +481,49 @@ for rr = 1:length(rowsToCheck)
     fprintf('Events: %d\n', length(EEG.event));
 
     channelLabels = {EEG.chanlocs.labels}';
+    dataFiniteOK = check_data_finite_blockwise(EEG.data);
+    durationOK = EEG.pnts > 1 && (EEG.pnts - 1) / EEG.srate >= 120;
+    labelsUniqueOK = numel(channelLabels) == numel(unique(string(channelLabels)));
+    labelsNonemptyOK = all(strlength(strtrim(string(channelLabels))) > 0);
+
+    expectedPreprocessingSignature = sourceMap.PreprocessingInputSignature(rowIdx);
+    [provenanceOK, provenanceNotes] = check_preprocessing_provenance( ...
+        EEG, expectedPreprocessingSignature, bidsSubject, bidsSession, ...
+        processingSubjectLabel);
+
+    rankEstimate = estimate_data_rank_sampled(EEG.data, rankSampleLimit);
+    [rankMetadataValue, rankMetadataValid] = get_rank_metadata(EEG);
+    rankOK = rankMetadataValid && ~isnan(rankEstimate) && ...
+        abs(rankMetadataValue - rankEstimate) <= 2;
+
+    lineNoisePeakDb = estimate_line_noise_peak_db( ...
+        EEG.data, EEG.srate, lineNoiseFrequencyHz);
+    lineNoiseOK = ~isnan(lineNoisePeakDb) && ...
+        lineNoisePeakDb <= maxLineNoisePeakDb;
+
+    hasZaplineMetadata = isfield(EEG, 'etc') && isfield(EEG.etc, 'zapline');
+    hasChannelRejectionMetadata = isfield(EEG, 'etc') && ...
+        isfield(EEG.etc, 'channel_rejection');
+    hasInterpolationMetadata = isfield(EEG, 'etc') && ...
+        isfield(EEG.etc, 'interpolated_channels');
+    hasAverageReferenceMetadata = isfield(EEG, 'etc') && ...
+        isfield(EEG.etc, 'bemobil_reref') && ~isempty(EEG.etc.bemobil_reref);
+    [interpolatedChannelCount, interpolationCountOK] = ...
+        check_interpolated_channel_count( ...
+        EEG, maxInterpolatedChannelFraction);
+
+    fprintf('\nProvenance check: %d\n', provenanceOK);
+    fprintf('Provenance detail: %s\n', provenanceNotes);
+    fprintf('Stored rank metadata: %.6g\n', rankMetadataValue);
+    fprintf('Estimated sampled data rank: %.6g\n', rankEstimate);
+    fprintf('Rank agreement within tolerance: %d\n', rankOK);
+    fprintf('Residual %.1f Hz peak relative to neighboring bands: %.4f dB\n', ...
+        lineNoiseFrequencyHz, lineNoisePeakDb);
+    fprintf('Residual line-noise check <= %.2f dB: %d\n', ...
+        maxLineNoisePeakDb, lineNoiseOK);
+    fprintf('Interpolated channels: %.0f\n', interpolatedChannelCount);
+    fprintf('Interpolated-channel fraction <= %.2f: %d\n', ...
+        maxInterpolatedChannelFraction, interpolationCountOK);
 
     %% --------------------------------------------------------------------
     %  SOURCE INFORMATION CHECK
@@ -540,7 +599,7 @@ for rr = 1:length(rowsToCheck)
     hasACC = false(size(accKeywords));
 
     for i = 1:length(accKeywords)
-        hasACC(i) = any(contains(channelLabels, accKeywords{i}));
+        hasACC(i) = any(contains(channelLabels, accKeywords{i}, 'IgnoreCase', true));
     end
 
     if any(hasACC)
@@ -558,9 +617,7 @@ for rr = 1:length(rowsToCheck)
     fprintf('Channel location check\n');
     fprintf('============================================================\n');
 
-    hasLoc = arrayfun(@(c) ...
-        isfield(c, 'X') && ~isempty(c.X) && ~isnan(c.X), ...
-        EEG.chanlocs);
+    hasLoc = arrayfun(@channel_has_valid_xyz, EEG.chanlocs);
 
     fprintf('Channels with locations: %d / %d\n', sum(hasLoc), EEG.nbchan);
 
@@ -589,6 +646,17 @@ for rr = 1:length(rowsToCheck)
     else
         fprintf('OK: Events exist. Number of events: %d\n', length(EEG.event));
         fprintf('Note: this preprocessing script intentionally did not trim data based on events.\n');
+    end
+
+    sourceMap = ensure_string_column(sourceMap, 'GaitEventStatus');
+    sourceMap = ensure_numeric_optional_column(sourceMap, 'PreprocessingQCEventCount');
+    sourceMap = ensure_numeric_optional_column(sourceMap, 'AnalysisReady');
+    sourceMap.PreprocessingQCEventCount(sessionRows) = numel(EEG.event);
+    sourceMap.AnalysisReady(sessionRows) = 0;
+    if isempty(EEG.event)
+        sourceMap.GaitEventStatus(sessionRows) = "events_missing_not_ready_for_gait_analysis";
+    else
+        sourceMap.GaitEventStatus(sessionRows) = "events_present_types_not_yet_validated";
     end
 
     %% --------------------------------------------------------------------
@@ -708,6 +776,19 @@ for rr = 1:length(rowsToCheck)
         locOK = false;
     end
 
+    fprintf('Data finite: %d\n', dataFiniteOK);
+    fprintf('Duration >= 120 s: %d\n', durationOK);
+    fprintf('Channel labels unique: %d\n', labelsUniqueOK);
+    fprintf('Channel labels non-empty: %d\n', labelsNonemptyOK);
+    fprintf('Preprocessing provenance verified: %d\n', provenanceOK);
+    fprintf('Rank metadata agrees with sampled data rank: %d\n', rankOK);
+    fprintf('Residual line-noise check passed: %d\n', lineNoiseOK);
+    fprintf('ZapLine metadata present: %d\n', hasZaplineMetadata);
+    fprintf('Channel-rejection metadata present: %d\n', hasChannelRejectionMetadata);
+    fprintf('Interpolation metadata present: %d\n', hasInterpolationMetadata);
+    fprintf('Interpolated-channel count acceptable: %d\n', interpolationCountOK);
+    fprintf('Average-reference metadata present: %d\n', hasAverageReferenceMetadata);
+
     if isempty(EEG.event)
         fprintf('NOTE: Events are empty.\n');
         eventNote = "events_empty";
@@ -724,7 +805,20 @@ for rr = 1:length(rowsToCheck)
     %  UPDATE IMPORT TABLE WITH QUALITY CHECK STATUS
     %  --------------------------------------------------------------------
 
-    if channelOK && srateOK && accOK && locOK
+    metadataOK = hasZaplineMetadata && hasChannelRejectionMetadata && ...
+        hasInterpolationMetadata && hasAverageReferenceMetadata;
+
+    allCheckNames = [ ...
+        "channel_count", "sampling_rate", "ACC_removed", "XYZ_locations", ...
+        "data_finite", "duration", "labels_unique", "labels_nonempty", ...
+        "preprocessing_metadata", "interpolated_channel_count", ...
+        "provenance", "rank", "line_noise_residual"];
+    allCheckValues = [ ...
+        channelOK, srateOK, accOK, locOK, dataFiniteOK, durationOK, ...
+        labelsUniqueOK, labelsNonemptyOK, metadataOK, interpolationCountOK, provenanceOK, ...
+        rankOK, lineNoiseOK];
+
+    if all(allCheckValues)
 
         qcStatus = "passed_basic_checks";
         qcNotes  = "Basic preprocessing checks passed. " + eventNote + ".";
@@ -732,9 +826,41 @@ for rr = 1:length(rowsToCheck)
     else
 
         qcStatus = "check_required";
-        qcNotes  = "One or more basic checks failed. See summary file. " + eventNote + ".";
+        failedCheckNames = allCheckNames(~allCheckValues);
+        qcNotes  = "Failed checks: " + join(failedCheckNames, "; ") + ...
+            ". See summary file. " + eventNote + ".";
 
     end
+
+    metricNames = {'PreprocessingQCDataFinite', 'PreprocessingQCDurationOK', ...
+        'PreprocessingQCLabelsUnique', 'PreprocessingQCHasZaplineMetadata', ...
+        'PreprocessingQCHasChannelRejectionMetadata', ...
+        'PreprocessingQCHasInterpolationMetadata', ...
+        'PreprocessingQCHasAverageReferenceMetadata', ...
+        'PreprocessingQCLabelsNonempty', ...
+        'PreprocessingQCProvenanceOK', ...
+        'PreprocessingQCRankOK', ...
+        'PreprocessingQCLineNoiseOK', ...
+        'PreprocessingQCInterpolationCountOK'};
+    metricValues = [dataFiniteOK, durationOK, labelsUniqueOK, ...
+        hasZaplineMetadata, hasChannelRejectionMetadata, ...
+        hasInterpolationMetadata, hasAverageReferenceMetadata, ...
+        labelsNonemptyOK, provenanceOK, rankOK, lineNoiseOK, ...
+        interpolationCountOK];
+
+    for mi = 1:numel(metricNames)
+        sourceMap = ensure_numeric_optional_column(sourceMap, metricNames{mi});
+        sourceMap.(metricNames{mi})(sessionRows) = double(metricValues(mi));
+    end
+
+    sourceMap = ensure_numeric_optional_column(sourceMap, 'PreprocessingQCRankMetadata');
+    sourceMap = ensure_numeric_optional_column(sourceMap, 'PreprocessingQCRankEstimate');
+    sourceMap = ensure_numeric_optional_column(sourceMap, 'PreprocessingQCLineNoisePeakDb');
+    sourceMap = ensure_numeric_optional_column(sourceMap, 'PreprocessingQCInterpolatedChannelCount');
+    sourceMap.PreprocessingQCRankMetadata(sessionRows) = rankMetadataValue;
+    sourceMap.PreprocessingQCRankEstimate(sessionRows) = rankEstimate;
+    sourceMap.PreprocessingQCLineNoisePeakDb(sessionRows) = lineNoisePeakDb;
+    sourceMap.PreprocessingQCInterpolatedChannelCount(sessionRows) = interpolatedChannelCount;
 
     sourceMap = update_qc_status( ...
         sourceMap, rowIdx, ...
@@ -883,10 +1009,270 @@ function T = update_qc_status(T, rowIdx, qcStatus, qcNotes, summaryFile, locatio
     T = ensure_string_column(T, 'PreprocessingQCFigurePath');
     T = ensure_string_column(T, 'PreprocessingQCNotes');
 
-    T.PreprocessingQCStatus(rowIdx) = string(qcStatus);
-    T.PreprocessingQCNotes(rowIdx) = string(qcNotes);
-    T.PreprocessingQCSummaryPath(rowIdx) = string(summaryFile);
-    T.PreprocessingQCFigurePath(rowIdx) = string(locationFig);
-    T.PreprocessingQCDate(rowIdx) = string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
+    rows = session_peer_rows(T, rowIdx);
+    T.PreprocessingQCStatus(rows) = string(qcStatus);
+    T.PreprocessingQCNotes(rows) = string(qcNotes);
+    T.PreprocessingQCSummaryPath(rows) = string(summaryFile);
+    T.PreprocessingQCFigurePath(rows) = string(locationFig);
+    T.PreprocessingQCDate(rows) = string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
+
+end
+
+function T = ensure_numeric_optional_column(T, columnName)
+
+    if ~ismember(columnName, T.Properties.VariableNames)
+        T.(columnName) = nan(height(T), 1);
+    elseif ~isnumeric(T.(columnName))
+        T.(columnName) = str2double(string(T.(columnName)));
+    end
+
+end
+
+function finiteOK = check_data_finite_blockwise(data)
+
+    finiteOK = ~isempty(data);
+    if ~finiteOK
+        return;
+    end
+
+    blockSize = 100000;
+    nSamples = size(data, 2);
+    for firstSample = 1:blockSize:nSamples
+        lastSample = min(nSamples, firstSample + blockSize - 1);
+        block = double(data(:, firstSample:lastSample));
+        if any(~isfinite(block(:)))
+            finiteOK = false;
+            return;
+        end
+    end
+
+end
+
+function tf = channel_has_valid_xyz(chanloc)
+
+    tf = true;
+    coordinateNames = {'X', 'Y', 'Z'};
+
+    for k = 1:numel(coordinateNames)
+        name = coordinateNames{k};
+        if ~isfield(chanloc, name) || isempty(chanloc.(name)) || ...
+                ~isnumeric(chanloc.(name)) || ~isscalar(chanloc.(name)) || ...
+                ~isfinite(double(chanloc.(name)))
+            tf = false;
+            return;
+        end
+    end
+
+end
+
+function [ok, notes] = check_preprocessing_provenance( ...
+    EEG, expectedSignature, expectedSubject, expectedSession, expectedProcessingLabel)
+
+    problems = strings(0, 1);
+    expectedSignature = string(expectedSignature);
+
+    if strlength(strtrim(expectedSignature)) == 0
+        problems(end+1, 1) = "table_preprocessing_signature_missing";
+    elseif ~isfield(EEG, 'etc') || ...
+            ~isfield(EEG.etc, 'preprocessing_input_signature') || ...
+            string(EEG.etc.preprocessing_input_signature) ~= expectedSignature
+        problems(end+1, 1) = "preprocessing_signature_mismatch";
+    end
+
+    if ~isfield(EEG, 'etc') || ~isfield(EEG.etc, 'real_bids_subject')
+        problems(end+1, 1) = "stored_bids_subject_missing";
+    else
+        storedSubject = scalar_number(EEG.etc.real_bids_subject);
+        if isnan(storedSubject) || storedSubject ~= double(expectedSubject)
+            problems(end+1, 1) = "stored_bids_subject_mismatch";
+        end
+    end
+
+    if ~isfield(EEG, 'etc') || ~isfield(EEG.etc, 'session_label') || ...
+            string(EEG.etc.session_label) ~= string(expectedSession)
+        problems(end+1, 1) = "stored_session_label_mismatch";
+    end
+
+    if ~isfield(EEG, 'etc') || ~isfield(EEG.etc, 'processing_subject_label') || ...
+            string(EEG.etc.processing_subject_label) ~= string(expectedProcessingLabel)
+        problems(end+1, 1) = "stored_processing_label_mismatch";
+    end
+
+    ok = isempty(problems);
+    if ok
+        notes = "OK";
+    else
+        notes = join(problems, "; ");
+    end
+
+end
+
+function value = scalar_number(x)
+
+    value = NaN;
+    try
+        if isnumeric(x) || islogical(x)
+            if isscalar(x)
+                value = double(x);
+            end
+        else
+            parsed = str2double(string(x));
+            if isscalar(parsed)
+                value = parsed;
+            end
+        end
+    catch
+        value = NaN;
+    end
+
+end
+
+function [rankValue, valid] = get_rank_metadata(EEG)
+
+    rankValue = NaN;
+    valid = false;
+
+    if ~isfield(EEG, 'etc') || ~isfield(EEG.etc, 'rank')
+        return;
+    end
+
+    rankValue = scalar_number(EEG.etc.rank);
+    valid = isfinite(rankValue) && rankValue >= 1 && ...
+        rankValue <= EEG.nbchan && abs(rankValue - round(rankValue)) < 1e-6;
+
+end
+
+function [count, ok] = check_interpolated_channel_count(EEG, maxFraction)
+
+    count = NaN;
+    ok = false;
+
+    if ~isfield(EEG, 'etc') || ~isfield(EEG.etc, 'interpolated_channels')
+        return;
+    end
+
+    channels = EEG.etc.interpolated_channels;
+    if isempty(channels)
+        count = 0;
+        ok = true;
+        return;
+    end
+
+    if ~isnumeric(channels) || any(~isfinite(double(channels(:)))) || ...
+            any(channels(:) < 1) || any(channels(:) > EEG.nbchan) || ...
+            any(abs(double(channels(:)) - round(double(channels(:)))) > 1e-6)
+        return;
+    end
+
+    count = numel(unique(double(channels(:))));
+    ok = count <= floor(double(EEG.nbchan) * maxFraction);
+
+end
+
+function rankEstimate = estimate_data_rank_sampled(data, sampleLimit)
+
+    rankEstimate = NaN;
+    try
+        data = reshape(data, size(data, 1), []);
+        nSamples = size(data, 2);
+        if nSamples < 2 || isempty(data)
+            return;
+        end
+        if nSamples > sampleLimit
+            sampleIdx = unique(round(linspace(1, nSamples, sampleLimit)));
+            data = data(:, sampleIdx);
+        end
+        rankEstimate = rank(double(data'));
+    catch
+        rankEstimate = NaN;
+    end
+
+end
+
+function peakDb = estimate_line_noise_peak_db(data, srate, targetHz)
+
+    peakDb = NaN;
+    try
+        if isempty(data) || ~isfinite(srate) || srate <= 0 || ...
+                targetHz + 3 >= srate / 2
+            return;
+        end
+
+        data = reshape(data, size(data, 1), []);
+        nAvailable = size(data, 2);
+        nSamples = min(nAvailable, max(round(10 * srate), round(60 * srate)));
+        if nAvailable < round(10 * srate) || nSamples < 4
+            return;
+        end
+
+        firstSample = floor((nAvailable - nSamples) / 2) + 1;
+        data = double(data(:, firstSample:firstSample + nSamples - 1));
+        data = data - mean(data, 2);
+
+        window = 0.5 - 0.5 * cos(2 * pi * (0:nSamples-1) / (nSamples-1));
+        spectrum = fft(data .* window, [], 2);
+        powerSpectrum = mean(abs(spectrum).^2, 1);
+        frequency = (0:nSamples-1) * (srate / nSamples);
+
+        positive = frequency <= srate / 2;
+        frequency = frequency(positive);
+        powerSpectrum = powerSpectrum(positive);
+
+        targetMask = abs(frequency - targetHz) <= 0.5;
+        neighborMask = (frequency >= targetHz - 3 & frequency <= targetHz - 1) | ...
+            (frequency >= targetHz + 1 & frequency <= targetHz + 3);
+
+        if ~any(targetMask) || ~any(neighborMask)
+            return;
+        end
+
+        targetPower = mean(powerSpectrum(targetMask));
+        neighborPower = mean(powerSpectrum(neighborMask));
+        if targetPower <= 0 || neighborPower <= 0 || ...
+                ~isfinite(targetPower) || ~isfinite(neighborPower)
+            return;
+        end
+
+        peakDb = 10 * log10(targetPower / neighborPower);
+    catch
+        peakDb = NaN;
+    end
+
+end
+
+function rows = session_peer_rows(T, rowIdx)
+
+    rows = rowIdx;
+    required = {'BidsSubject', 'BidsSession'};
+    if ~all(ismember(required, T.Properties.VariableNames))
+        return;
+    end
+
+    subjectValues = T.BidsSubject;
+    if ~isnumeric(subjectValues)
+        subjectValues = str2double(string(subjectValues));
+    end
+    sessionValues = string(T.BidsSession);
+    sessionValues(ismissing(sessionValues)) = "";
+
+    subjectValue = subjectValues(rowIdx);
+    sessionValue = sessionValues(rowIdx);
+    if isnan(subjectValue) || strlength(strtrim(sessionValue)) == 0
+        return;
+    end
+
+    mask = subjectValues == subjectValue & sessionValues == sessionValue;
+    if ismember('DoImport', T.Properties.VariableNames)
+        doImport = T.DoImport;
+        if ~isnumeric(doImport)
+            doImport = str2double(string(doImport));
+        end
+        mask = mask & doImport == 1;
+    end
+
+    matchedRows = find(mask);
+    if ~isempty(matchedRows)
+        rows = matchedRows;
+    end
 
 end

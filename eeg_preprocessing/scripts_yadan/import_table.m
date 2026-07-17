@@ -19,6 +19,8 @@
 
 clear; clc;
 
+expectedEEGStreamName = "LiveAmpSN-102108-1139";
+
 %% Load central paths
 
 run(fullfile(fileparts(mfilename('fullpath')), 'paths.m'));
@@ -57,10 +59,11 @@ disp(streamDetail.Properties.VariableNames');
 
 %% Make sure required columns exist
 
-requiredSummaryColumns = {'FileIndex', 'FileName', 'FullPath', 'HasRealEEG'};
+requiredSummaryColumns = {'FileIndex', 'FileName', 'FullPath', ...
+                          'HasRealEEG', 'HasUsableEEG'};
 requiredDetailColumns = {'FileIndex', 'FileName', 'FullPath', 'StreamIndex', ...
                          'StreamName', 'StreamType', 'NominalSrate', ...
-                         'ChannelCount', 'IsRealEEG'};
+                         'ChannelCount', 'IsRealEEG', 'IsUsableEEG'};
 
 check_required_columns(fileSummary, requiredSummaryColumns, 'file summary table');
 check_required_columns(streamDetail, requiredDetailColumns, 'stream detail table');
@@ -71,22 +74,10 @@ fileSummary.FileIndex = to_numeric_column(fileSummary.FileIndex);
 streamDetail.FileIndex = to_numeric_column(streamDetail.FileIndex);
 streamDetail.StreamIndex = to_numeric_column(streamDetail.StreamIndex);
 
-fileSummary.HasRealEEG = to_logical_column(fileSummary.HasRealEEG);
-streamDetail.IsRealEEG = to_logical_column(streamDetail.IsRealEEG);
-
-if ismember('HasUsableEEG', fileSummary.Properties.VariableNames)
-    fileSummary.HasUsableEEG = to_logical_column(fileSummary.HasUsableEEG);
-else
-    warning('HasUsableEEG column not found. Falling back to HasRealEEG.');
-    fileSummary.HasUsableEEG = fileSummary.HasRealEEG;
-end
-
-if ismember('IsUsableEEG', streamDetail.Properties.VariableNames)
-    streamDetail.IsUsableEEG = to_logical_column(streamDetail.IsUsableEEG);
-else
-    warning('IsUsableEEG column not found. Falling back to IsRealEEG.');
-    streamDetail.IsUsableEEG = streamDetail.IsRealEEG;
-end
+fileSummary.HasRealEEG   = to_logical_column(fileSummary.HasRealEEG);
+fileSummary.HasUsableEEG = to_logical_column(fileSummary.HasUsableEEG);
+streamDetail.IsRealEEG   = to_logical_column(streamDetail.IsRealEEG);
+streamDetail.IsUsableEEG = to_logical_column(streamDetail.IsUsableEEG);
 
 %% Convert text columns
 
@@ -165,8 +156,9 @@ for k = 1:numel(eegRows)
         'names', 'once');
 
     if isempty(pathTok)
-        warning('Could not parse raw path. Skipping:\n%s', xdfPathChar);
-        continue;
+        error(['Could not parse a real-EEG XDF path:\n%s\n' ...
+            'No import table was written. Fix the path schema or update the path regexp explicitly.'], ...
+            xdfPathChar);
     end
 
     rawSubject = string(pathTok.rawSubject);
@@ -180,16 +172,14 @@ for k = 1:numel(eegRows)
         'names', 'once');
 
     if isempty(subjTok)
-        warning('Could not parse subject folder. Skipping:\n%s', rawSubject);
-        continue;
+        error('Could not parse subject folder for a real-EEG XDF: %s', rawSubject);
     end
 
     pilotNumber = subjTok.pilot;
     subjectNumber = str2double(subjTok.subject);
 
     if isnan(subjectNumber)
-        warning('Invalid subject number. Skipping:\n%s', rawSubject);
-        continue;
+        error('Invalid subject number for a real-EEG XDF: %s', rawSubject);
     end
 
     %% Create BIDS subject and session labels
@@ -242,7 +232,12 @@ for k = 1:numel(eegRows)
     realStreamRows = find(streamDetail.FileIndex == thisFileIndex & ...
                           streamDetail.IsRealEEG);
 
-    if ~isempty(usableStreamRows)
+    exactUsableRows = usableStreamRows( ...
+        streamDetail.StreamName(usableStreamRows) == expectedEEGStreamName);
+
+    if ~isempty(exactUsableRows)
+        selectedStreamRow = exactUsableRows(1);
+    elseif ~isempty(usableStreamRows)
         selectedStreamRow = usableStreamRows(1);
     elseif ~isempty(realStreamRows)
         selectedStreamRow = realStreamRows(1);
@@ -302,8 +297,11 @@ for k = 1:numel(eegRows)
 
     %% Decide whether to import by default
 
-    % Keep old files in the table, but do not import them by default.
-    isOldFile = ~isempty(regexpi(char(thisFullPath), 'old\d*', 'once'));
+    % Keep old/backup files in the table, but do not import them by default.
+    % Match only a filename suffix such as _old.xdf, _old1.xdf, _old2.xdf.
+    % Do not inspect the whole path, because a parent folder could contain
+    % the word "old" without the XDF itself being an old backup.
+    isOldFile = ~isempty(regexpi(char(thisFileName), '_old\d*\.xdf$', 'once'));
 
     if isOldFile
 
@@ -314,6 +312,11 @@ for k = 1:numel(eegRows)
         else
             extraTag = "old_file_default_skip";
         end
+
+    elseif eegStream ~= expectedEEGStreamName
+
+        doImportFlag = 0;
+        extraTag = "unexpected_eeg_stream_default_skip;" + thisQualityStatus;
 
     elseif ~thisHasUsableEEG
 
@@ -387,6 +390,19 @@ importTable = table( ...
     MaxDtSec, ...
     NDataSamples, ...
     NTimeStamps);
+
+% Keep the QC-derived recommendation separate from the editable DoImport flag.
+importTable.RecommendedDoImport = importTable.DoImport;
+
+% Preserve manual and downstream columns only when the source-row signature
+% is unchanged. Changed rows deliberately lose downstream status so stale
+% preprocessing/AMICA outputs cannot be trusted silently.
+importTable = preserve_existing_columns(importTable, importTableFile);
+
+% A duplicate BIDS run key is dangerous only when more than one row is
+% actually enabled for import. Disabled old/backup rows may share the same
+% parsed key and should remain visible without disabling the valid row.
+importTable = disable_duplicate_bids_keys(importTable);
 
 writetable(importTable, importTableFile);
 
@@ -525,6 +541,225 @@ function label = make_bids_label(rawLabel)
 
         label = label + firstChar + restChars;
 
+    end
+
+end
+
+function T = disable_duplicate_bids_keys(T)
+
+    % Only enabled rows can overwrite one another during XDF -> BIDS import.
+    % A disabled _old*.xdf row is allowed to share the same parsed BIDS key
+    % with the current file because it will not be passed to bemobil_xdf2bids.
+    T.DoImport = to_numeric_column(T.DoImport);
+
+    if ismember('RecommendedDoImport', T.Properties.VariableNames)
+        T.RecommendedDoImport = to_numeric_column(T.RecommendedDoImport);
+    end
+
+    enabledRows = find(T.DoImport == 1);
+
+    if numel(enabledRows) < 2
+        return;
+    end
+
+    runText = string(T.RunNumber(enabledRows));
+    runText(ismissing(runText)) = "";
+
+    keys = string(T.BidsSubject(enabledRows)) + "|" + ...
+           string(T.BidsSession(enabledRows)) + "|" + ...
+           string(T.Task(enabledRows)) + "|" + runText;
+
+    [uniqueKeys, ~, groupIndex] = unique(keys, 'stable');
+    counts = accumarray(groupIndex, 1);
+    duplicateGroups = find(counts > 1);
+
+    if isempty(duplicateGroups)
+        return;
+    end
+
+    warning(['Duplicate ENABLED BIDS subject/session/task/run keys found. ' ...
+             'Only the conflicting enabled rows were set to DoImport = 0.']);
+
+    for k = 1:numel(duplicateGroups)
+
+        rows = enabledRows(groupIndex == duplicateGroups(k));
+
+        T.DoImport(rows) = 0;
+
+        if ismember('RecommendedDoImport', T.Properties.VariableNames)
+            T.RecommendedDoImport(rows) = 0;
+        end
+
+        T.EEGQualityStatus(rows) = "BAD_duplicate_enabled_bids_key";
+        T.EEGQualityReason(rows) = ...
+            "multiple_enabled_XDF_files_map_to_the_same_BIDS_subject_session_task_run";
+        T.ExtraTag(rows) = "duplicate_enabled_bids_key_default_skip";
+
+        fprintf('Duplicate enabled key: %s\n', uniqueKeys(duplicateGroups(k)));
+        disp(T(rows, {'FileName', 'XdfPath', 'BidsSubject', ...
+                      'BidsSession', 'Task', 'RunNumber', 'DoImport'}));
+
+    end
+
+end
+
+function newT = preserve_existing_columns(newT, tableFile)
+
+    if ~exist(tableFile, 'file')
+        return;
+    end
+
+    try
+        opts = detectImportOptions(tableFile, 'FileType', 'text', 'Delimiter', ',', ...
+            'VariableNamingRule', 'preserve');
+        oldT = readtable(tableFile, opts);
+    catch ME
+        warning('Could not read the previous import table. Existing manual columns were not preserved: %s', ME.message);
+        return;
+    end
+
+    if ~ismember('XdfPath', oldT.Properties.VariableNames)
+        warning('Previous import table has no XdfPath column. Existing columns were not preserved.');
+        return;
+    end
+
+    oldT.XdfPath = string(oldT.XdfPath);
+    newT.XdfPath = string(newT.XdfPath);
+
+    oldExtra = setdiff(oldT.Properties.VariableNames, newT.Properties.VariableNames, 'stable');
+    columnsToPreserve = [{'DoImport'}, oldExtra];
+
+    for c = 1:numel(columnsToPreserve)
+        name = columnsToPreserve{c};
+        if ~ismember(name, oldT.Properties.VariableNames)
+            continue;
+        end
+        if ~ismember(name, newT.Properties.VariableNames)
+            newT.(name) = make_missing_column_like(oldT.(name), height(newT));
+        end
+    end
+
+    preservedRows = 0;
+    invalidatedRows = 0;
+
+    for r = 1:height(newT)
+        oldRow = find(oldT.XdfPath == newT.XdfPath(r), 1, 'first');
+        if isempty(oldRow)
+            continue;
+        end
+
+        if source_signature_matches(oldT, oldRow, newT, r)
+            for c = 1:numel(columnsToPreserve)
+                name = columnsToPreserve{c};
+                if ismember(name, oldT.Properties.VariableNames)
+
+                    if strcmp(name, 'DoImport')
+
+                        % Never enable a row that is currently not recommended.
+                        if newT.RecommendedDoImport(r) ~= 1
+                            continue;
+                        end
+
+                        % Earlier versions automatically set all rows in a
+                        % duplicate group to DoImport = 0. Do not preserve that
+                        % obsolete automatic decision; let the current QC logic
+                        % restore the valid non-old row to DoImport = 1.
+                        if was_auto_disabled_duplicate(oldT, oldRow)
+                            continue;
+                        end
+
+                    end
+
+                    newT.(name)(r,:) = oldT.(name)(oldRow,:);
+
+                end
+            end
+            preservedRows = preservedRows + 1;
+        else
+            invalidatedRows = invalidatedRows + 1;
+        end
+    end
+
+    fprintf('Preserved manual/downstream columns for %d unchanged XDF rows.\n', preservedRows);
+    fprintf('Invalidated downstream columns for %d changed XDF rows.\n', invalidatedRows);
+
+end
+
+function tf = was_auto_disabled_duplicate(T, row)
+
+    tf = false;
+
+    if ismember('ExtraTag', T.Properties.VariableNames)
+        tag = string(T.ExtraTag(row));
+        tag(ismissing(tag)) = "";
+
+        if contains(tag, "duplicate_bids_key_default_skip") || ...
+                contains(tag, "duplicate_enabled_bids_key_default_skip")
+            tf = true;
+            return;
+        end
+    end
+
+    if ismember('EEGQualityStatus', T.Properties.VariableNames)
+        status = string(T.EEGQualityStatus(row));
+        status(ismissing(status)) = "";
+
+        if status == "BAD_duplicate_bids_key" || ...
+                status == "BAD_duplicate_enabled_bids_key"
+            tf = true;
+        end
+    end
+
+end
+
+function tf = source_signature_matches(oldT, oldRow, newT, newRow)
+
+    tf = true;
+    fields = {'BidsSubject', 'BidsSession', 'Task', 'RunNumber', ...
+              'NDataSamples', 'NTimeStamps', 'DurationSec', 'EffectiveSrate'};
+
+    for i = 1:numel(fields)
+        name = fields{i};
+        if ~ismember(name, oldT.Properties.VariableNames) || ...
+                ~ismember(name, newT.Properties.VariableNames)
+            tf = false;
+            return;
+        end
+
+        a = string(oldT.(name)(oldRow));
+        b = string(newT.(name)(newRow));
+
+        if ismember(name, {'DurationSec', 'EffectiveSrate'})
+            av = str2double(a);
+            bv = str2double(b);
+            if ~(isfinite(av) && isfinite(bv) && abs(av - bv) <= 1e-6)
+                tf = false;
+                return;
+            end
+        elseif ~isequaln(a, b)
+            tf = false;
+            return;
+        end
+    end
+
+end
+
+function out = make_missing_column_like(example, nRows)
+
+    if isstring(example)
+        out = strings(nRows, size(example, 2));
+    elseif islogical(example)
+        out = false(nRows, size(example, 2));
+    elseif isnumeric(example)
+        out = nan(nRows, size(example, 2));
+    elseif isdatetime(example)
+        out = NaT(nRows, size(example, 2));
+    elseif iscell(example)
+        out = cell(nRows, size(example, 2));
+    elseif iscategorical(example)
+        out = repmat(categorical(missing), nRows, size(example, 2));
+    else
+        out = strings(nRows, size(example, 2));
     end
 
 end

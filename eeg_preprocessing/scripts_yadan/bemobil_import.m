@@ -39,6 +39,10 @@ cleanBidsSessionsBeforeImport = true;
 % This prevents stale *_old.set / broken intermediate files from previous attempts.
 cleanRawSetsBeforeBids2Set = true;
 
+% Move previous session outputs into a temporary backup before cleanup.
+% They are restored automatically if any enabled run or BIDS2SET conversion fails.
+preservePreviousOutputsOnFailure = true;
+
 % Raw EEG target sampling rate.
 % Raw EEGLAB output is kept at 500 Hz here.
 % Real downsampling to 250 Hz happens later during BeMoBIL preprocessing.
@@ -67,7 +71,6 @@ minDurationSec = 120;
 %  ========================================================================
 
 run(fullfile(fileparts(mfilename('fullpath')), 'paths.m'));
-cd(outputFolder);
 
 studyFolder = outputFolder;
 bidsFolder  = fullfile(studyFolder, '1_BIDS-data');
@@ -76,6 +79,8 @@ setFolder   = fullfile(studyFolder, '2_raw-EEGLAB');
 if ~exist(outputFolder, 'dir')
     mkdir(outputFolder);
 end
+
+cd(outputFolder);
 
 if ~exist(bidsFolder, 'dir')
     mkdir(bidsFolder);
@@ -167,11 +172,22 @@ if isempty(rowsToImport)
     error('No rows have DoImport = 1. Check bemobil_import_table.csv.');
 end
 
+% Complete preflight before deleting any existing BIDS/raw output.
+preflight_enabled_import_rows(importTable, rowsToImport);
+
 %% ========================================================================
 %  CLEAN STALE OUTPUTS FOR ENABLED SESSIONS
 %  ========================================================================
 
 enabledPairs = unique(importTable(rowsToImport, {'BidsSubject', 'BidsSession'}), 'rows', 'stable');
+
+backupRoot = fullfile(outputFolder, 'import_backups', ...
+    char(datetime('now', 'Format', 'yyyyMMdd_HHmmssSSS')));
+
+if preservePreviousOutputsOnFailure && ...
+        (cleanBidsSessionsBeforeImport || cleanRawSetsBeforeBids2Set)
+    mkdir(backupRoot);
+end
 
 fprintf('\n============================================================\n');
 fprintf('CLEANING STALE OUTPUTS FOR ENABLED SESSIONS\n');
@@ -187,6 +203,11 @@ for i = 1:height(enabledPairs)
     fprintf('\n------------------------------------------------------------\n');
     fprintf('Subject: %d\n', subj);
     fprintf('Session: %s\n', sessionName);
+
+    if preservePreviousOutputsOnFailure
+        backup_session_outputs(bidsFolder, setFolder, backupRoot, subj, sessionName, ...
+            cleanBidsSessionsBeforeImport, cleanRawSetsBeforeBids2Set);
+    end
 
     if cleanBidsSessionsBeforeImport
         clean_bids_session_folder(bidsFolder, subj, sessionName);
@@ -380,6 +401,23 @@ fprintf('============================================================\n');
 
 successfulRows = importLog.Success == true;
 bids2setLog = table();
+sessionCoverage = build_session_import_coverage(importTable, rowsToImport, importLog);
+
+sessionCoverageFile = fullfile(outputFolder, 'bemobil_session_import_coverage.csv');
+writetable(sessionCoverage, sessionCoverageFile);
+
+fprintf('\nSession import coverage:\n');
+disp(sessionCoverage);
+fprintf('Session import coverage saved to:\n%s\n', sessionCoverageFile);
+
+if preservePreviousOutputsOnFailure
+    incompleteRows = find(~sessionCoverage.SessionImportComplete);
+    for q = 1:numel(incompleteRows)
+        restore_session_outputs(bidsFolder, setFolder, backupRoot, ...
+            sessionCoverage.BidsSubject(incompleteRows(q)), ...
+            sessionCoverage.BidsSession(incompleteRows(q)));
+    end
+end
 
 if ~any(successfulRows)
 
@@ -387,11 +425,21 @@ if ~any(successfulRows)
 
 else
 
-    successLog = importLog(successfulRows, :);
-    sessionPairs = unique(successLog(:, {'BidsSubject', 'BidsSession'}), 'rows', 'stable');
+    sessionPairs = sessionCoverage(sessionCoverage.SessionImportComplete, ...
+        {'BidsSubject', 'BidsSession'});
+
+    incompleteCoverage = sessionCoverage(~sessionCoverage.SessionImportComplete, :);
+
+    for q = 1:height(incompleteCoverage)
+        bids2setLog = [bids2setLog; make_bids2set_log_row( ...
+            incompleteCoverage.BidsSubject(q), ...
+            incompleteCoverage.BidsSession(q), false, ...
+            "Skipped: not all enabled runs completed XDF-to-BIDS import. Missing runs: " + ...
+            incompleteCoverage.MissingRunNumbers(q))];
+    end
 
     fprintf('\nBIDS2SET will run session-by-session.\n');
-    fprintf('Subject-session pairs to convert: %d\n', height(sessionPairs));
+    fprintf('Complete subject-session pairs to convert: %d\n', height(sessionPairs));
 
     for p = 1:height(sessionPairs)
 
@@ -423,8 +471,21 @@ else
 
             bemobil_bids2set(config);
 
+            coverageRow = find(sessionCoverage.BidsSubject == subj & ...
+                sessionCoverage.BidsSession == sessionName, 1, 'first');
+            [rawOutputOK, rawOutputMessage] = validate_raw_session_output( ...
+                setFolder, subj, sessionName, ...
+                sessionCoverage.ExpectedRunCount(coverageRow));
+            if ~rawOutputOK
+                error('BIDS2SET output validation failed: %s', rawOutputMessage);
+            end
+
             bids2setLog = [bids2setLog; make_bids2set_log_row( ...
                 subj, sessionName, true, "OK")];
+
+            if preservePreviousOutputsOnFailure
+                discard_session_backup(backupRoot, subj, sessionName);
+            end
 
         catch ME
 
@@ -436,6 +497,10 @@ else
 
             bids2setLog = [bids2setLog; make_bids2set_log_row( ...
                 subj, sessionName, false, string(ME.message))];
+
+            if preservePreviousOutputsOnFailure
+                restore_session_outputs(bidsFolder, setFolder, backupRoot, subj, sessionName);
+            end
 
         end
 
@@ -474,7 +539,7 @@ fprintf('============================================================\n');
 
 auditBeforeFile = fullfile(outputFolder, 'raw_set_audit_before_repair.csv');
 
-auditBefore = audit_raw_set_files(importTable, bidsFolder, setFolder, auditBeforeFile);
+auditBefore = audit_raw_set_files(importTable, sessionCoverage, bidsFolder, setFolder, auditBeforeFile);
 
 print_audit_summary(auditBefore, 'BEFORE REPAIR');
 
@@ -513,7 +578,7 @@ fprintf('============================================================\n');
 
 auditAfterFile = fullfile(outputFolder, 'raw_set_audit.csv');
 
-auditAfter = audit_raw_set_files(importTable, bidsFolder, setFolder, auditAfterFile);
+auditAfter = audit_raw_set_files(importTable, sessionCoverage, bidsFolder, setFolder, auditAfterFile);
 
 print_audit_summary(auditAfter, 'AFTER REPAIR');
 
@@ -609,6 +674,165 @@ function logRow = make_bids2set_log_row(bidsSubject, bidsSession, successFlag, m
 
 end
 
+function preflight_enabled_import_rows(T, rowsToImport)
+
+    required = {'XdfPath', 'BidsSubject', 'BidsSession', 'Task', ...
+                'RunNumber', 'EEGStreamName', 'DoImport'};
+
+    for i = 1:numel(required)
+        if ~ismember(required{i}, T.Properties.VariableNames)
+            error('Import preflight failed: required column "%s" is missing.', required{i});
+        end
+    end
+
+    missingFiles = strings(0, 1);
+    for i = 1:numel(rowsToImport)
+        p = string(T.XdfPath(rowsToImport(i)));
+        if strlength(strtrim(p)) == 0 || exist(char(p), 'file') ~= 2
+            missingFiles(end+1, 1) = p;
+        end
+    end
+
+    if ~isempty(missingFiles)
+        disp(missingFiles);
+        error('Import preflight failed: one or more enabled XDF files do not exist. No existing output was deleted.');
+    end
+
+    streamNames = string(T.EEGStreamName(rowsToImport));
+    badStreamRows = rowsToImport(streamNames ~= "LiveAmpSN-102108-1139");
+    if ~isempty(badStreamRows)
+        disp(T(badStreamRows, {'XdfPath', 'EEGStreamName', 'BidsSubject', 'BidsSession'}));
+        error('Import preflight failed: an enabled row does not use the configured LiveAmp EEG stream.');
+    end
+
+    runText = string(T.RunNumber(rowsToImport));
+    runText(ismissing(runText)) = "";
+    keys = string(T.BidsSubject(rowsToImport)) + "|" + ...
+           string(T.BidsSession(rowsToImport)) + "|" + ...
+           string(T.Task(rowsToImport)) + "|" + runText;
+
+    [~, ~, groupIndex] = unique(keys, 'stable');
+    counts = accumarray(groupIndex, 1);
+    duplicateGroups = find(counts > 1);
+
+    if ~isempty(duplicateGroups)
+        duplicateMask = ismember(groupIndex, duplicateGroups);
+        disp(T(rowsToImport(duplicateMask), ...
+            {'XdfPath', 'BidsSubject', 'BidsSession', 'Task', 'RunNumber'}));
+        error('Import preflight failed: duplicate enabled BIDS run keys exist. No existing output was deleted.');
+    end
+
+    fprintf('Import preflight passed for %d enabled XDF rows.\n', numel(rowsToImport));
+
+end
+
+function coverage = build_session_import_coverage(T, rowsToImport, importLog)
+
+    pairs = unique(T(rowsToImport, {'BidsSubject', 'BidsSession'}), 'rows', 'stable');
+
+    BidsSubject = pairs.BidsSubject;
+    BidsSession = string(pairs.BidsSession);
+    ExpectedRunCount = zeros(height(pairs), 1);
+    SuccessfulRunCount = zeros(height(pairs), 1);
+    ExpectedRunNumbers = strings(height(pairs), 1);
+    SuccessfulRunNumbers = strings(height(pairs), 1);
+    MissingRunNumbers = strings(height(pairs), 1);
+    SessionImportComplete = false(height(pairs), 1);
+
+    successfulTableRows = importLog.TableRow(importLog.Success);
+
+    for i = 1:height(pairs)
+        sessionRows = rowsToImport( ...
+            T.BidsSubject(rowsToImport) == pairs.BidsSubject(i) & ...
+            string(T.BidsSession(rowsToImport)) == string(pairs.BidsSession(i)));
+
+        successfulRows = sessionRows(ismember(sessionRows, successfulTableRows));
+        missingRows = setdiff(sessionRows, successfulRows, 'stable');
+
+        ExpectedRunCount(i) = numel(sessionRows);
+        SuccessfulRunCount(i) = numel(successfulRows);
+        ExpectedRunNumbers(i) = format_run_labels(T.RunNumber(sessionRows));
+        SuccessfulRunNumbers(i) = format_run_labels(T.RunNumber(successfulRows));
+        MissingRunNumbers(i) = format_run_labels(T.RunNumber(missingRows));
+        SessionImportComplete(i) = ...
+            ExpectedRunCount(i) > 0 && SuccessfulRunCount(i) == ExpectedRunCount(i);
+    end
+
+    coverage = table(BidsSubject, BidsSession, ExpectedRunCount, ...
+        SuccessfulRunCount, ExpectedRunNumbers, SuccessfulRunNumbers, ...
+        MissingRunNumbers, SessionImportComplete);
+
+end
+
+function txt = format_run_labels(runValues)
+
+    if isempty(runValues)
+        txt = "";
+        return;
+    end
+
+    runValues = double(runValues);
+    labels = strings(numel(runValues), 1);
+    for i = 1:numel(runValues)
+        if isnan(runValues(i))
+            labels(i) = "no-run-label";
+        else
+            labels(i) = sprintf('%03d', runValues(i));
+        end
+    end
+    txt = join(labels, ";");
+
+end
+
+function [ok, message] = validate_raw_session_output(setFolder, subj, sessionName, expectedRunCount)
+
+    ok = false;
+    message = "no_current_raw_set_found";
+    rawSubFolders = unique({sprintf('sub-%d', subj), sprintf('sub-%02d', subj)}, 'stable');
+
+    for i = 1:numel(rawSubFolders)
+        rawFolder = fullfile(setFolder, rawSubFolders{i});
+        if ~exist(rawFolder, 'dir')
+            continue;
+        end
+
+        prefix = sprintf('%s_%s_EEG', rawSubFolders{i}, sessionName);
+        sessionFile = fullfile(rawFolder, [prefix '.set']);
+        recFiles = dir(fullfile(rawFolder, [prefix '_rec*.set']));
+        recFiles = recFiles(~contains({recFiles.name}, '_old.set', 'IgnoreCase', true));
+
+        if expectedRunCount > 1
+            candidate = sessionFile;
+            if exist(candidate, 'file') ~= 2
+                message = "multiple_runs_expected_but_merged_session_set_missing";
+                continue;
+            end
+        elseif exist(sessionFile, 'file') == 2
+            candidate = sessionFile;
+        elseif numel(recFiles) == 1
+            candidate = fullfile(recFiles(1).folder, recFiles(1).name);
+        else
+            continue;
+        end
+
+        try
+            [folder, base, ext] = fileparts(candidate);
+            EEG = pop_loadset('filename', [base ext], 'filepath', folder);
+            EEG = eeg_checkset(EEG);
+            if EEG.nbchan <= 10 || EEG.pnts <= 0 || EEG.srate <= 0
+                message = "raw_set_loaded_but_has_invalid_dimensions";
+                continue;
+            end
+            ok = true;
+            message = "OK";
+            return;
+        catch ME
+            message = "raw_set_load_failed: " + string(ME.message);
+        end
+    end
+
+end
+
 function clean_bids_session_folder(bidsFolder, subj, sessionName)
 
     bidsSubFolder = sprintf('sub-%02d', subj);
@@ -669,7 +893,116 @@ function clean_raw_session_sets(setFolder, subj, sessionName)
 
 end
 
-function auditTable = audit_raw_set_files(importTable, bidsFolder, setFolder, auditFile)
+function backup_session_outputs(bidsFolder, setFolder, backupRoot, subj, sessionName, backupBids, backupRaw)
+
+    if ~exist(backupRoot, 'dir')
+        mkdir(backupRoot);
+    end
+
+    if backupBids
+        bidsSubFolder = sprintf('sub-%02d', subj);
+        sourceSession = fullfile(bidsFolder, bidsSubFolder, ['ses-' char(sessionName)]);
+        backupSession = fullfile(backupRoot, 'BIDS', bidsSubFolder, ['ses-' char(sessionName)]);
+
+        if exist(sourceSession, 'dir')
+            mkdir(fileparts(backupSession));
+            movefile(sourceSession, backupSession, 'f');
+            fprintf('Previous BIDS session moved to safety backup:\n%s\n', backupSession);
+        end
+    end
+
+    if backupRaw
+        rawSubFolders = unique({sprintf('sub-%d', subj), sprintf('sub-%02d', subj)}, 'stable');
+        for i = 1:numel(rawSubFolders)
+            rawSubFolder = rawSubFolders{i};
+            rawFolder = fullfile(setFolder, rawSubFolder);
+            if ~exist(rawFolder, 'dir')
+                continue;
+            end
+
+            prefix = sprintf('%s_%s_EEG', rawSubFolder, sessionName);
+            files = [dir(fullfile(rawFolder, [prefix '*.set'])); ...
+                     dir(fullfile(rawFolder, [prefix '*.fdt']))];
+            if isempty(files)
+                continue;
+            end
+
+            backupFolder = fullfile(backupRoot, 'RAW', rawSubFolder);
+            mkdir(backupFolder);
+            for k = 1:numel(files)
+                movefile(fullfile(files(k).folder, files(k).name), ...
+                    fullfile(backupFolder, files(k).name), 'f');
+            end
+            fprintf('Previous raw session files moved to safety backup:\n%s\n', backupFolder);
+        end
+    end
+
+end
+
+function restore_session_outputs(bidsFolder, setFolder, backupRoot, subj, sessionName)
+
+    fprintf('Restoring previous outputs for subject %d session %s.\n', subj, sessionName);
+
+    clean_bids_session_folder(bidsFolder, subj, sessionName);
+    clean_raw_session_sets(setFolder, subj, sessionName);
+
+    bidsSubFolder = sprintf('sub-%02d', subj);
+    backupSession = fullfile(backupRoot, 'BIDS', bidsSubFolder, ['ses-' char(sessionName)]);
+    targetSession = fullfile(bidsFolder, bidsSubFolder, ['ses-' char(sessionName)]);
+    if exist(backupSession, 'dir')
+        mkdir(fileparts(targetSession));
+        movefile(backupSession, targetSession, 'f');
+    end
+
+    rawSubFolders = unique({sprintf('sub-%d', subj), sprintf('sub-%02d', subj)}, 'stable');
+    for i = 1:numel(rawSubFolders)
+        backupFolder = fullfile(backupRoot, 'RAW', rawSubFolders{i});
+        if ~exist(backupFolder, 'dir')
+            continue;
+        end
+
+        prefix = sprintf('%s_%s_EEG', rawSubFolders{i}, sessionName);
+        files = [dir(fullfile(backupFolder, [prefix '*.set'])); ...
+                 dir(fullfile(backupFolder, [prefix '*.fdt']))];
+        if isempty(files)
+            continue;
+        end
+
+        targetFolder = fullfile(setFolder, rawSubFolders{i});
+        mkdir(targetFolder);
+        for k = 1:numel(files)
+            movefile(fullfile(files(k).folder, files(k).name), ...
+                fullfile(targetFolder, files(k).name), 'f');
+        end
+    end
+
+end
+
+function discard_session_backup(backupRoot, subj, sessionName)
+
+    bidsSubFolder = sprintf('sub-%02d', subj);
+    backupSession = fullfile(backupRoot, 'BIDS', bidsSubFolder, ['ses-' char(sessionName)]);
+    if exist(backupSession, 'dir')
+        rmdir(backupSession, 's');
+    end
+
+    rawSubFolders = unique({sprintf('sub-%d', subj), sprintf('sub-%02d', subj)}, 'stable');
+    for i = 1:numel(rawSubFolders)
+        backupFolder = fullfile(backupRoot, 'RAW', rawSubFolders{i});
+        if ~exist(backupFolder, 'dir')
+            continue;
+        end
+        prefix = sprintf('%s_%s_EEG', rawSubFolders{i}, sessionName);
+        files = [dir(fullfile(backupFolder, [prefix '*.set'])); ...
+                 dir(fullfile(backupFolder, [prefix '*.fdt']))];
+        for k = 1:numel(files)
+            delete(fullfile(files(k).folder, files(k).name));
+        end
+    end
+
+end
+
+function auditTable = audit_raw_set_files(importTable, sessionCoverage, bidsFolder, setFolder, auditFile)
 
     T = importTable;
 
@@ -705,9 +1038,14 @@ function auditTable = audit_raw_set_files(importTable, bidsFolder, setFolder, au
     OldSets = strings(0, 1);
     AllMatchingSets = strings(0, 1);
     SelectedRawSetPath = strings(0, 1);
+    SelectedRawSetSignature = strings(0, 1);
 
     Status = strings(0, 1);
     Recommendation = strings(0, 1);
+    ExpectedRunCount = [];
+    SuccessfulRunCount = [];
+    MissingRunNumbers = strings(0, 1);
+    SessionImportComplete = false(0, 1);
 
     fprintf('\nRaw set folder:\n%s\n', setFolder);
     fprintf('BIDS folder:\n%s\n', bidsFolder);
@@ -741,7 +1079,7 @@ function auditTable = audit_raw_set_files(importTable, bidsFolder, setFolder, au
         bidsSubFolder = sprintf('sub-%02d', subj);
         bidsSessionFolder = fullfile(bidsFolder, bidsSubFolder, ['ses-' char(sessionName)], 'eeg');
 
-        bidsRuns = dir(fullfile(bidsSessionFolder, '*_run-*_eeg.vhdr'));
+        bidsRuns = dir(fullfile(bidsSessionFolder, '*_eeg.vhdr'));
         nBidsRuns = numel(bidsRuns);
 
         rawSubFolder1 = sprintf('sub-%d', subj);
@@ -750,16 +1088,26 @@ function auditTable = audit_raw_set_files(importTable, bidsFolder, setFolder, au
         rawFolder1 = fullfile(setFolder, rawSubFolder1);
         rawFolder2 = fullfile(setFolder, rawSubFolder2);
 
-        if exist(rawFolder1, 'dir')
-            rawFolder = rawFolder1;
-            rawSubFolderUsed = rawSubFolder1;
-        elseif exist(rawFolder2, 'dir')
-            rawFolder = rawFolder2;
-            rawSubFolderUsed = rawSubFolder2;
-        else
-            rawFolder = rawFolder1;
-            rawSubFolderUsed = rawSubFolder1;
+        candidateFolders = {rawFolder1, rawFolder2};
+        candidateLabels = {rawSubFolder1, rawSubFolder2};
+        hasMatchingFiles = false(1, 2);
+        for cf = 1:2
+            if exist(candidateFolders{cf}, 'dir')
+                candidatePrefix = sprintf('%s_%s_EEG', candidateLabels{cf}, sessionName);
+                hasMatchingFiles(cf) = ~isempty(dir(fullfile(candidateFolders{cf}, [candidatePrefix '*.set'])));
+            end
         end
+        if strcmp(candidateFolders{1}, candidateFolders{2})
+            hasMatchingFiles(2) = false;
+        end
+
+        multipleRawFolders = sum(hasMatchingFiles) > 1;
+        selectedFolderIndex = find(hasMatchingFiles, 1, 'first');
+        if isempty(selectedFolderIndex)
+            selectedFolderIndex = 1;
+        end
+        rawFolder = candidateFolders{selectedFolderIndex};
+        rawSubFolderUsed = candidateLabels{selectedFolderIndex};
 
         prefix = sprintf('%s_%s_EEG', rawSubFolderUsed, sessionName);
 
@@ -805,17 +1153,53 @@ function auditTable = audit_raw_set_files(importTable, bidsFolder, setFolder, au
 
         selectedPath = "";
 
-        if ~isempty(sessionSet)
+        coverageRow = find(sessionCoverage.BidsSubject == subj & ...
+            sessionCoverage.BidsSession == sessionName, 1, 'first');
+
+        if isempty(coverageRow)
+            expectedRunCount = numel(tableRows);
+            successfulRunCount = 0;
+            missingRunNumbers = runText;
+            sessionImportComplete = false;
+        else
+            expectedRunCount = sessionCoverage.ExpectedRunCount(coverageRow);
+            successfulRunCount = sessionCoverage.SuccessfulRunCount(coverageRow);
+            missingRunNumbers = sessionCoverage.MissingRunNumbers(coverageRow);
+            sessionImportComplete = sessionCoverage.SessionImportComplete(coverageRow);
+        end
+
+        if multipleRawFolders
+
+            thisStatus = "PROBLEM_duplicate_raw_subject_folders";
+            thisRecommendation = "Matching session files exist in both sub-N and sub-0N raw folders. Resolve the duplicate folders before preprocessing.";
+
+        elseif ~sessionImportComplete
+
+            thisStatus = "PROBLEM_partial_session_missing_runs";
+            thisRecommendation = "Do not preprocess. Not all enabled XDF runs were imported successfully. Missing runs: " + missingRunNumbers;
+
+        elseif nBidsRuns ~= expectedRunCount
+
+            thisStatus = "PROBLEM_bids_run_count_mismatch";
+            thisRecommendation = sprintf('Do not preprocess. Expected %d BIDS run files but found %d.', expectedRunCount, nBidsRuns);
+
+        elseif ~isempty(sessionSet)
 
             thisStatus = "OK_session_level_EEG_set";
             thisRecommendation = "Use *_EEG.set for preprocessing. This usually means runs were merged into one session-level set.";
             selectedPath = string(fullfile(sessionSet(1).folder, sessionSet(1).name));
 
-        elseif isempty(sessionSet) && numel(currentRecSets) == 1
+        elseif isempty(sessionSet) && numel(currentRecSets) == 1 && expectedRunCount == 1
 
             thisStatus = "OK_single_recording_rec_set";
             thisRecommendation = "Use the non-old *_EEG_rec*.set for preprocessing. This usually means only one valid recording is available for this session.";
             selectedPath = string(fullfile(currentRecSets(1).folder, currentRecSets(1).name));
+
+        elseif isempty(sessionSet) && numel(currentRecSets) == 1 && expectedRunCount > 1
+
+            thisStatus = "PROBLEM_expected_multiple_runs_but_only_one_rec_set";
+            thisRecommendation = sprintf(['Do not preprocess. Expected %d runs, but only one current recording-level ' ...
+                '.set exists and no merged session-level *_EEG.set was found.'], expectedRunCount);
 
         elseif isempty(sessionSet) && numel(currentRecSets) > 1
 
@@ -853,6 +1237,11 @@ function auditTable = audit_raw_set_files(importTable, bidsFolder, setFolder, au
 
         Status(end+1, 1) = thisStatus;
         Recommendation(end+1, 1) = thisRecommendation;
+        ExpectedRunCount(end+1, 1) = expectedRunCount;
+        SuccessfulRunCount(end+1, 1) = successfulRunCount;
+        MissingRunNumbers(end+1, 1) = missingRunNumbers;
+        SessionImportComplete(end+1, 1) = sessionImportComplete;
+        SelectedRawSetSignature(end+1, 1) = compute_file_signature(selectedPath);
 
     end
 
@@ -870,7 +1259,12 @@ function auditTable = audit_raw_set_files(importTable, bidsFolder, setFolder, au
         AllMatchingSets, ...
         SelectedRawSetPath, ...
         Status, ...
-        Recommendation);
+        Recommendation, ...
+        ExpectedRunCount, ...
+        SuccessfulRunCount, ...
+        MissingRunNumbers, ...
+        SessionImportComplete, ...
+        SelectedRawSetSignature);
 
     writetable(auditTable, auditFile);
 
@@ -899,6 +1293,15 @@ function repairLog = repair_only_old_raw_sets(auditTable, setFolder, repairLogFi
         sessionName = string(auditTable.BidsSession(rowIdx));
         rawSubFolder = string(auditTable.RawSubjectFolder(rowIdx));
         rawFolder = string(auditTable.RawFolder(rowIdx));
+        expectedRunCount = double(auditTable.ExpectedRunCount(rowIdx));
+
+        if ~isfinite(expectedRunCount) || expectedRunCount < 1 || ...
+                expectedRunCount ~= round(expectedRunCount)
+            warning('Invalid expected run count in raw-set audit. Skipping automatic repair.');
+            repairLog = [repairLog; make_repair_log_row(subj, sessionName, false, ...
+                "invalid_expected_run_count", "", "")];
+            continue;
+        end
 
         fprintf('\n------------------------------------------------------------\n');
         fprintf('Repairing only-old session %d / %d\n', i, numel(problemRows));
@@ -908,6 +1311,7 @@ function repairLog = repair_only_old_raw_sets(auditTable, setFolder, repairLogFi
         fprintf('Target raw sampling rate: %.2f Hz\n', targetSrate);
         fprintf('Srate tolerance: %.6f Hz\n', srateToleranceHz);
         fprintf('Minimum duration: %.2f sec\n', minDurationSec);
+        fprintf('Expected run count: %d\n', expectedRunCount);
 
         if ~exist(rawFolder, 'dir')
 
@@ -1020,6 +1424,21 @@ function repairLog = repair_only_old_raw_sets(auditTable, setFolder, repairLogFi
 
                     continue;
 
+                elseif validSetCount ~= expectedRunCount
+
+                    warning(['Recovered old recording count does not match the expected run count. ' ...
+                        'No current .set will be created. Expected %d, recovered %d.'], ...
+                        expectedRunCount, validSetCount);
+
+                    mismatchMessage = sprintf( ...
+                        'recovered_recording_count_mismatch_expected_%d_got_%d', ...
+                        expectedRunCount, validSetCount);
+
+                    repairLog = [repairLog; make_repair_log_row(subj, sessionName, false, ...
+                        string(mismatchMessage), "", join(skippedFiles, "; "))];
+
+                    continue;
+
                 elseif validSetCount == 1
 
                     EEG = ALLEEG(1);
@@ -1053,6 +1472,8 @@ function repairLog = repair_only_old_raw_sets(auditTable, setFolder, repairLogFi
                 EEG.etc.recovered_resample_method = "pop_resample";
                 EEG.etc.recovered_srate_tolerance_hz = srateToleranceHz;
                 EEG.etc.recovered_min_duration_sec = minDurationSec;
+                EEG.etc.recovered_expected_run_count = expectedRunCount;
+                EEG.etc.recovered_recording_count = validSetCount;
 
                 pop_saveset(EEG, ...
                     'filename', outputFilename, ...
@@ -1332,15 +1753,27 @@ function importTable = write_raw_status_to_import_table(importTable, auditTable)
     importTable = ensure_string_column(importTable, 'RawSetPath');
     importTable = ensure_string_column(importTable, 'RawSetRecommendation');
     importTable = ensure_numeric_optional_column(importTable, 'RecommendedDoPreprocess');
+    importTable = ensure_string_column(importTable, 'RawSetSignature');
+    importTable = ensure_numeric_optional_column(importTable, 'RawSetChanged');
+    importTable = ensure_string_column(importTable, 'RawImportDate');
+
+    importTable.RawSetSignature(ismissing(importTable.RawSetSignature)) = "";
+    importTable.RawImportDate(ismissing(importTable.RawImportDate)) = "";
+
+    previousSignature = importTable.RawSetSignature;
 
     importTable.DoImport = to_numeric_column(importTable.DoImport);
     importTable.BidsSubject = to_numeric_column(importTable.BidsSubject);
     importTable.BidsSession = string(importTable.BidsSession);
+    if ismember('DoPreprocess', importTable.Properties.VariableNames)
+        importTable.DoPreprocess = to_numeric_column(importTable.DoPreprocess);
+    end
 
     importTable.RawSetStatus(:) = "";
     importTable.RawSetPath(:) = "";
     importTable.RawSetRecommendation(:) = "";
     importTable.RecommendedDoPreprocess(:) = 0;
+    importTable.RawSetChanged(:) = 0;
 
     for i = 1:height(auditTable)
 
@@ -1358,13 +1791,97 @@ function importTable = write_raw_status_to_import_table(importTable, auditTable)
         importTable.RawSetStatus(rows) = auditTable.Status(i);
         importTable.RawSetPath(rows) = auditTable.SelectedRawSetPath(i);
         importTable.RawSetRecommendation(rows) = auditTable.Recommendation(i);
+        importTable.RawSetSignature(rows) = auditTable.SelectedRawSetSignature(i);
+        importTable.RawImportDate(rows) = string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
+
+        signatureChanged = any(previousSignature(rows) ~= ...
+            auditTable.SelectedRawSetSignature(i));
+        rawNotUsable = ~startsWith(auditTable.Status(i), "OK_");
+
+        if signatureChanged || rawNotUsable
+            importTable = invalidate_downstream_columns(importTable, rows);
+            importTable.RawSetChanged(rows) = 1;
+        end
 
         if startsWith(auditTable.Status(i), "OK_")
             importTable.RecommendedDoPreprocess(rows(1)) = 1;
+            if signatureChanged && ismember('DoPreprocess', importTable.Properties.VariableNames)
+                importTable.DoPreprocess(rows) = 0;
+                importTable.DoPreprocess(rows(1)) = 1;
+            end
         else
             importTable.RecommendedDoPreprocess(rows) = 0;
+            if ismember('DoPreprocess', importTable.Properties.VariableNames)
+                importTable.DoPreprocess(rows) = 0;
+            end
         end
 
+    end
+
+end
+
+function signature = compute_file_signature(filePath)
+
+    signature = "";
+    filePath = string(filePath);
+
+    if strlength(strtrim(filePath)) == 0 || exist(char(filePath), 'file') ~= 2
+        return;
+    end
+
+    info = dir(char(filePath));
+    signature = string(info.bytes) + "|" + compose('%.15g', info.datenum);
+
+    [folder, base, ext] = fileparts(char(filePath));
+    if strcmpi(ext, '.set')
+        fdtInfo = dir(fullfile(folder, [base '.fdt']));
+        if ~isempty(fdtInfo)
+            signature = signature + "|fdt=" + string(fdtInfo.bytes) + ...
+                "|" + compose('%.15g', fdtInfo.datenum);
+        end
+    end
+
+end
+
+function T = invalidate_downstream_columns(T, rows)
+
+    prefixes = { ...
+        'DoPreprocess', 'ProcessingSubject', 'ImportedSetPath', ...
+        'PreprocessedSetPath', 'Preprocessing', 'DoQC', ...
+        'DoAMICA', 'AMICA', 'DipfittedSetPath', ...
+        'PreprocessedICASetPath', 'CleanedICASetPath', ...
+        'DoICAQC', 'ICAQC', 'AnalysisReady' ...
+    };
+
+    names = T.Properties.VariableNames;
+
+    for c = 1:numel(names)
+        name = names{c};
+        shouldClear = false;
+        for p = 1:numel(prefixes)
+            if startsWith(name, prefixes{p})
+                shouldClear = true;
+                break;
+            end
+        end
+
+        if ~shouldClear
+            continue;
+        end
+
+        x = T.(name);
+        if isstring(x)
+            x(rows,:) = "";
+        elseif isnumeric(x)
+            x(rows,:) = NaN;
+        elseif islogical(x)
+            x(rows,:) = false;
+        elseif isdatetime(x)
+            x(rows,:) = NaT;
+        elseif iscell(x)
+            x(rows,:) = {[]};
+        end
+        T.(name) = x;
     end
 
 end
@@ -1378,6 +1895,8 @@ function T = ensure_string_column(T, columnName)
             T.(columnName) = string(T.(columnName));
         end
     end
+
+    T.(columnName)(ismissing(T.(columnName))) = "";
 
 end
 

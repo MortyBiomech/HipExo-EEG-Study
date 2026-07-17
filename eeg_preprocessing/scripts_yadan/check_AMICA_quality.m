@@ -47,7 +47,7 @@ expectedSrate = 250;
 
 % Reset DoICAQC from completed and fully verified AMICA outputs.
 % Set this to false if you manually edit DoICAQC in the CSV later.
-reset_DoICAQC_from_AMICAStatus = true;
+reset_DoICAQC_from_AMICAStatus = false;
 
 % Rank estimate is computed from a subset for speed.
 rankSampleLimit = 10000;
@@ -55,6 +55,7 @@ rankSampleLimit = 10000;
 % RV thresholds are fractions, not percent.
 rvThreshold15 = 0.15;
 rvThreshold20 = 0.20;
+maxAMICABadSamplesPercent = 20;
 
 %% ========================================================================
 %  INITIALIZE EEGLAB
@@ -70,7 +71,7 @@ hide_all_figures_local();
 %  LOAD BEMOBIL CONFIGURATION
 %  ========================================================================
 
-run(fullfile(scriptsFolder, 'bemobil_config_.m'));
+run(fullfile(fileparts(mfilename('fullpath')), 'bemobil_config_.m'));
 
 hide_all_figures_local();
 
@@ -178,7 +179,11 @@ else
         writetable(sourceMap, mappingFile);
         fprintf('\nReset DoICAQC from AMICAStatus == completed and AMICAOutputStatus == complete_outputs_verified.\n');
     else
-        fprintf('\nUsing existing DoICAQC values from the table.\n');
+        missingDoICAQC = isnan(sourceMap.DoICAQC);
+        sourceMap.DoICAQC(missingDoICAQC) = 0;
+        sourceMap.DoICAQC(missingDoICAQC & readyForICAQC) = 1;
+        writetable(sourceMap, mappingFile);
+        fprintf('\nPreserved explicit DoICAQC values and filled only missing values from verified AMICA outputs.\n');
     end
 
 end
@@ -210,6 +215,14 @@ numericColumns = { ...
     'ICAQCDIPFITDimOK', ...
     'ICAQCDipfittedHasDIPFIT', ...
     'ICAQCPreprocessedCleanedCompatible', ...
+    'ICAQCICAMatrixDimOK', ...
+    'ICAQCICAValuesFinite', ...
+    'ICAQCAMICAPreprocessedEquivalent', ...
+    'ICAQCDipfittedPreprocessedEquivalent', ...
+    'ICAQCHasAMICAMetadata', ...
+    'ICAQCHasBadSampleMask', ...
+    'ICAQCBadSamples', ...
+    'ICAQCBadSamplesPercent', ...
     'ICAQCBrainICs', ...
     'ICAQCBrainICsP050', ...
     'ICAQCBrainICsP070', ...
@@ -291,6 +304,7 @@ for rr = 1:numel(rowsToCheck)
     hide_all_figures_local();
 
     rowIdx = rowsToCheck(rr);
+    sessionRows = session_peer_rows_local(sourceMap, rowIdx);
 
     cleanedSetPath = char(sourceMap.CleanedICASetPath(rowIdx));
     preprocessedICASetPath = char(sourceMap.PreprocessedICASetPath(rowIdx));
@@ -316,12 +330,21 @@ for rr = 1:numel(rowsToCheck)
         expectedSrate, ...
         rankSampleLimit, ...
         rvThreshold15, ...
-        rvThreshold20);
+        rvThreshold20, ...
+        maxAMICABadSamplesPercent);
 
     sourceMap.ICAQCStatus(rowIdx) = string(status);
     sourceMap.ICAQCNotes(rowIdx) = string(notes);
     sourceMap.ICAQCDate(rowIdx) = string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
     sourceMap.ICAQCSetPath(rowIdx) = string(cleanedSetPath);
+
+    sourceMap = ensure_string_column_local(sourceMap, 'ExpertICReviewStatus');
+    sourceMap = ensure_numeric_nan_column_local(sourceMap, 'AnalysisReady');
+    emptyExpertRows = sessionRows( ...
+        strlength(strtrim(sourceMap.ExpertICReviewStatus(sessionRows))) == 0);
+    sourceMap.ExpertICReviewStatus(emptyExpertRows) = ...
+        "pending_manual_cortical_IC_review";
+    sourceMap.AnalysisReady(sessionRows) = 0;
 
     sourceMap.ICAQCChannels(rowIdx) = metrics.channels;
     sourceMap.ICAQCSrate(rowIdx) = metrics.srate;
@@ -341,6 +364,14 @@ for rr = 1:numel(rowsToCheck)
     sourceMap.ICAQCDIPFITDimOK(rowIdx) = double(metrics.dipfitDimOK);
     sourceMap.ICAQCDipfittedHasDIPFIT(rowIdx) = double(metrics.dipfittedHasDIPFIT);
     sourceMap.ICAQCPreprocessedCleanedCompatible(rowIdx) = double(metrics.preprocessedCleanedCompatible);
+    sourceMap.ICAQCICAMatrixDimOK(rowIdx) = double(metrics.icaMatrixDimOK);
+    sourceMap.ICAQCICAValuesFinite(rowIdx) = double(metrics.icaValuesFinite);
+    sourceMap.ICAQCAMICAPreprocessedEquivalent(rowIdx) = double(metrics.amicaPreprocessedEquivalent);
+    sourceMap.ICAQCDipfittedPreprocessedEquivalent(rowIdx) = double(metrics.dipfittedPreprocessedEquivalent);
+    sourceMap.ICAQCHasAMICAMetadata(rowIdx) = double(metrics.hasAMICAMetadata);
+    sourceMap.ICAQCHasBadSampleMask(rowIdx) = double(metrics.hasBadSampleMask);
+    sourceMap.ICAQCBadSamples(rowIdx) = metrics.badSamples;
+    sourceMap.ICAQCBadSamplesPercent(rowIdx) = metrics.badSamplesPercent;
 
     sourceMap.ICAQCBrainICs(rowIdx) = metrics.brainICs;
     sourceMap.ICAQCBrainICsP050(rowIdx) = metrics.brainICsP050;
@@ -355,6 +386,13 @@ for rr = 1:numel(rowsToCheck)
     sourceMap.ICAQCDipfitRVBelow15(rowIdx) = metrics.dipfitRVBelow15;
     sourceMap.ICAQCDipfitRVBelow20(rowIdx) = metrics.dipfitRVBelow20;
 
+    % ICA outputs are session-level. Mirror all automatic ICA-QC results to
+    % every enabled import-table row belonging to the same session.
+    resultColumns = [{'ICAQCStatus', 'ICAQCNotes', 'ICAQCDate', 'ICAQCSetPath'}, ...
+        numericColumns];
+    sourceMap = copy_row_to_rows_local( ...
+        sourceMap, rowIdx, sessionRows, resultColumns);
+
     fprintf('ICAQCStatus: %s\n', status);
     fprintf('ICAQCNotes: %s\n', notes);
     fprintf('Cleaned EEG: channels %g | srate %.6f | samples %g | rank estimate %g\n', ...
@@ -367,6 +405,12 @@ for rr = 1:numel(rowsToCheck)
         metrics.brainICs, metrics.brainICsP050, metrics.brainICsP070);
     fprintf('DIPFIT RV median: %.6f | RV<15%%: %g | RV<20%%: %g\n', ...
         metrics.dipfitRVMedian, metrics.dipfitRVBelow15, metrics.dipfitRVBelow20);
+    fprintf('ICA dimensions OK: %d | ICA values finite: %d\n', ...
+        metrics.icaMatrixDimOK, metrics.icaValuesFinite);
+    fprintf('AMICA/preprocessed equivalent: %d | dipfitted/preprocessed equivalent: %d\n', ...
+        metrics.amicaPreprocessedEquivalent, metrics.dipfittedPreprocessedEquivalent);
+    fprintf('AMICA bad samples: %g (%.4f%%)\n', ...
+        metrics.badSamples, metrics.badSamplesPercent);
 
     writetable(sourceMap, mappingFile);
 
@@ -396,7 +440,15 @@ summaryTable = sourceMap(checkedRows, intersect({ ...
     'ICAQCDipfitRVBelow20', ...
     'ICAQCICLabelDimOK', ...
     'ICAQCDIPFITDimOK', ...
-    'ICAQCPreprocessedCleanedCompatible' ...
+    'ICAQCPreprocessedCleanedCompatible', ...
+    'ICAQCICAMatrixDimOK', ...
+    'ICAQCICAValuesFinite', ...
+    'ICAQCAMICAPreprocessedEquivalent', ...
+    'ICAQCDipfittedPreprocessedEquivalent', ...
+    'ICAQCBadSamples', ...
+    'ICAQCBadSamplesPercent', ...
+    'ExpertICReviewStatus', ...
+    'AnalysisReady' ...
 }, sourceMap.Properties.VariableNames, 'stable'));
 
 disp(summaryTable);
@@ -412,7 +464,7 @@ fprintf('\nDone.\n');
 %  HELPER FUNCTIONS
 %  ========================================================================
 
-function [status, notes, metrics] = check_one_ica_output(cleanedSetPath, preprocessedICASetPath, amicaSetPath, dipfittedSetPath, expectedChannels, expectedSrate, rankSampleLimit, rvThreshold15, rvThreshold20)
+function [status, notes, metrics] = check_one_ica_output(cleanedSetPath, preprocessedICASetPath, amicaSetPath, dipfittedSetPath, expectedChannels, expectedSrate, rankSampleLimit, rvThreshold15, rvThreshold20, maxAMICABadSamplesPercent)
 
     metrics = empty_ica_metrics();
     warnings = strings(0, 1);
@@ -476,7 +528,6 @@ function [status, notes, metrics] = check_one_ica_output(cleanedSetPath, preproc
         if ~finiteOK
             failures(end+1, 1) = "NaN_or_Inf_in_cleaned_EEG_data";
         end
-        metrics.rankEstimate = estimate_data_rank_sampled(EEG_cleaned.data, rankSampleLimit);
     end
 
     cleanedLabels = get_channel_labels(EEG_cleaned);
@@ -510,6 +561,10 @@ function [status, notes, metrics] = check_one_ica_output(cleanedSetPath, preproc
         icaSrate = safe_get_numeric_field(EEG_ica, 'srate');
         icaSamples = safe_get_numeric_field(EEG_ica, 'pnts');
 
+        if isempty(EEG_ica.data) || ~check_data_finite_sampled(EEG_ica.data)
+            failures(end+1, 1) = "NaN_Inf_or_empty_data_in_preprocessed_and_ICA";
+        end
+
         if icaChannels == metrics.channels && ...
                 abs(icaSrate - metrics.srate) <= 1e-6 && ...
                 icaSamples == metrics.samples
@@ -529,8 +584,56 @@ function [status, notes, metrics] = check_one_ica_output(cleanedSetPath, preproc
 
         if metrics.hasICAWeights
             metrics.nICs = size(EEG_ica.icaweights, 1);
+            metrics.rankEstimate = estimate_data_rank_sampled(EEG_ica.data, rankSampleLimit);
+
+            hasSphere = isfield(EEG_ica, 'icasphere') && ~isempty(EEG_ica.icasphere);
+            hasWinv = isfield(EEG_ica, 'icawinv') && ~isempty(EEG_ica.icawinv);
+            hasChanInd = isfield(EEG_ica, 'icachansind') && ~isempty(EEG_ica.icachansind);
+
+            if hasSphere && hasWinv && hasChanInd
+                metrics.icaMatrixDimOK = ...
+                    size(EEG_ica.icaweights, 2) == size(EEG_ica.icasphere, 1) && ...
+                    size(EEG_ica.icasphere, 2) == numel(EEG_ica.icachansind) && ...
+                    size(EEG_ica.icawinv, 1) == numel(EEG_ica.icachansind) && ...
+                    size(EEG_ica.icawinv, 2) == metrics.nICs && ...
+                    all(EEG_ica.icachansind >= 1) && ...
+                    all(EEG_ica.icachansind <= EEG_ica.nbchan);
+            end
+
+            metrics.icaValuesFinite = all(isfinite(double(EEG_ica.icaweights(:)))) && ...
+                hasSphere && all(isfinite(double(EEG_ica.icasphere(:)))) && ...
+                hasWinv && all(isfinite(double(EEG_ica.icawinv(:))));
+
+            if ~metrics.icaMatrixDimOK
+                failures(end+1, 1) = "ICA_matrix_dimensions_are_inconsistent";
+            end
+            if ~metrics.icaValuesFinite
+                failures(end+1, 1) = "ICA_matrices_contain_NaN_or_Inf";
+            end
         else
             failures(end+1, 1) = "missing_ICA_weights_or_sphere_in_preprocessed_and_ICA";
+        end
+
+        if isfield(EEG_ica, 'etc') && isfield(EEG_ica.etc, 'spatial_filter') && ...
+                isfield(EEG_ica.etc.spatial_filter, 'algorithm') && ...
+                strcmpi(string(EEG_ica.etc.spatial_filter.algorithm), "AMICA")
+            metrics.hasAMICAMetadata = true;
+        else
+            failures(end+1, 1) = "missing_AMICA_algorithm_metadata";
+        end
+
+        if isfield(EEG_ica, 'etc') && isfield(EEG_ica.etc, 'bad_samples')
+            mask = logical(EEG_ica.etc.bad_samples(:));
+            metrics.hasBadSampleMask = numel(mask) == EEG_ica.pnts;
+            metrics.badSamples = sum(mask);
+            metrics.badSamplesPercent = 100 * mean(mask);
+            if ~metrics.hasBadSampleMask
+                failures(end+1, 1) = "AMICA_bad_sample_mask_length_mismatch";
+            elseif metrics.badSamplesPercent > maxAMICABadSamplesPercent
+                warnings(end+1, 1) = "AMICA_bad_sample_percentage_exceeds_review_threshold";
+            end
+        else
+            warnings(end+1, 1) = "AMICA_bad_sample_mask_missing";
         end
 
         [hasICLabel, icLabelMetrics, icLabelDimOK] = extract_iclabel_metrics(EEG_ica, metrics.nICs);
@@ -552,7 +655,7 @@ function [status, notes, metrics] = check_one_ica_output(cleanedSetPath, preproc
                 failures(end+1, 1) = "ICLabel_dimension_does_not_match_IC_count";
             end
         else
-            warnings(end+1, 1) = "missing_ICLabel_classification_in_preprocessed_and_ICA";
+            failures(end+1, 1) = "missing_ICLabel_classification_in_preprocessed_and_ICA";
         end
 
         [hasDIPFIT, dipfitMetrics, dipfitDimOK] = extract_dipfit_metrics(EEG_ica, metrics.nICs, rvThreshold15, rvThreshold20);
@@ -568,9 +671,27 @@ function [status, notes, metrics] = check_one_ica_output(cleanedSetPath, preproc
                 failures(end+1, 1) = "DIPFIT_model_count_does_not_match_IC_count";
             end
         else
-            warnings(end+1, 1) = "missing_DIPFIT_model_or_RV_in_preprocessed_and_ICA";
+            failures(end+1, 1) = "missing_DIPFIT_model_or_RV_in_preprocessed_and_ICA";
         end
 
+    end
+
+
+    %% --------------------------------------------------------------------
+    %  Verify AMICA.set and dipfitted.set use the same spatial filter
+    %  --------------------------------------------------------------------
+
+    if ~isempty(EEG_ica) && metrics.hasAMICASet
+        try
+            EEG_amica = load_set_local(amicaSetPath);
+            metrics.amicaPreprocessedEquivalent = spatial_filters_equivalent(EEG_amica, EEG_ica);
+            if ~metrics.amicaPreprocessedEquivalent
+                failures(end+1, 1) = "AMICA_and_preprocessed_ICA_spatial_filters_do_not_match";
+            end
+        catch ME
+            failures(end+1, 1) = "failed_load_or_compare_AMICA_set";
+            warnings(end+1, 1) = "AMICA_compare_error: " + string(ME.message);
+        end
     end
 
     %% --------------------------------------------------------------------
@@ -583,14 +704,22 @@ function [status, notes, metrics] = check_one_ica_output(cleanedSetPath, preproc
             EEG_dipfitted = load_set_local(dipfittedSetPath);
             [dipfittedHasDIPFIT, ~, dipfittedDimOK] = extract_dipfit_metrics(EEG_dipfitted, metrics.nICs, rvThreshold15, rvThreshold20);
             metrics.dipfittedHasDIPFIT = dipfittedHasDIPFIT;
+            if ~isempty(EEG_ica)
+                metrics.dipfittedPreprocessedEquivalent = ...
+                    spatial_filters_equivalent(EEG_dipfitted, EEG_ica);
+                if ~metrics.dipfittedPreprocessedEquivalent
+                    failures(end+1, 1) = "dipfitted_and_preprocessed_ICA_spatial_filters_do_not_match";
+                end
+            end
 
             if ~dipfittedHasDIPFIT
-                warnings(end+1, 1) = "dipfitted_set_has_no_DIPFIT_RV_values";
+                failures(end+1, 1) = "dipfitted_set_has_no_DIPFIT_RV_values";
             elseif ~dipfittedDimOK && ~isnan(metrics.nICs)
-                warnings(end+1, 1) = "dipfitted_set_DIPFIT_count_does_not_match_IC_count";
+                failures(end+1, 1) = "dipfitted_set_DIPFIT_count_does_not_match_IC_count";
             end
         catch ME
-            warnings(end+1, 1) = "failed_load_dipfitted_set: " + string(ME.message);
+            failures(end+1, 1) = "failed_load_dipfitted_set";
+            warnings(end+1, 1) = "dipfitted_set_load_error: " + string(ME.message);
         end
 
     end
@@ -648,6 +777,14 @@ function metrics = empty_ica_metrics()
     metrics.dipfitDimOK = false;
     metrics.dipfittedHasDIPFIT = false;
     metrics.preprocessedCleanedCompatible = false;
+    metrics.icaMatrixDimOK = false;
+    metrics.icaValuesFinite = false;
+    metrics.amicaPreprocessedEquivalent = false;
+    metrics.dipfittedPreprocessedEquivalent = false;
+    metrics.hasAMICAMetadata = false;
+    metrics.hasBadSampleMask = false;
+    metrics.badSamples = NaN;
+    metrics.badSamplesPercent = NaN;
 
     metrics.brainICs = NaN;
     metrics.brainICsP050 = NaN;
@@ -708,17 +845,21 @@ end
 
 function finiteOK = check_data_finite_sampled(data)
 
-    finiteOK = true;
+    finiteOK = ~isempty(data);
+    if ~finiteOK
+        return;
+    end
 
     try
-        n = numel(data);
-        if n == 0
-            finiteOK = false;
-            return;
+        blockSize = 100000;
+        for firstSample = 1:blockSize:size(data, 2)
+            lastSample = min(size(data, 2), firstSample + blockSize - 1);
+            block = double(data(:, firstSample:lastSample));
+            if any(~isfinite(block(:)))
+                finiteOK = false;
+                return;
+            end
         end
-        step = max(1, floor(n / 500000));
-        sampledData = double(data(1:step:end));
-        finiteOK = all(isfinite(sampledData(:)));
     catch
         finiteOK = false;
     end
@@ -730,12 +871,13 @@ function rankEstimate = estimate_data_rank_sampled(data, rankSampleLimit)
     rankEstimate = NaN;
 
     try
-        dataDouble = double(data);
-        nSamples = size(dataDouble, 2);
+        nSamples = size(data, 2);
 
         if nSamples > rankSampleLimit
             idx = round(linspace(1, nSamples, rankSampleLimit));
-            dataDouble = dataDouble(:, idx);
+            dataDouble = double(data(:, idx));
+        else
+            dataDouble = double(data);
         end
 
         dataDouble = dataDouble - mean(dataDouble, 2, 'omitnan');
@@ -743,6 +885,38 @@ function rankEstimate = estimate_data_rank_sampled(data, rankSampleLimit)
     catch
         rankEstimate = NaN;
     end
+
+end
+
+function equivalent = spatial_filters_equivalent(A, B)
+
+    equivalent = false;
+
+    required = {'icaweights', 'icasphere'};
+    for i = 1:numel(required)
+        if ~isfield(A, required{i}) || isempty(A.(required{i})) || ...
+                ~isfield(B, required{i}) || isempty(B.(required{i}))
+            return;
+        end
+    end
+
+    UA = double(A.icaweights) * double(A.icasphere);
+    UB = double(B.icaweights) * double(B.icasphere);
+
+    if ~isequal(size(UA), size(UB)) || any(~isfinite(UA(:))) || any(~isfinite(UB(:)))
+        return;
+    end
+
+    normA = sqrt(sum(UA.^2, 2));
+    normB = sqrt(sum(UB.^2, 2));
+    if any(normA == 0) || any(normB == 0)
+        return;
+    end
+
+    UA = UA ./ normA;
+    UB = UB ./ normB;
+    rowCosine = abs(sum(UA .* UB, 2));
+    equivalent = all(rowCosine > 1 - 1e-8);
 
 end
 
@@ -876,6 +1050,57 @@ function T = ensure_numeric_nan_column_local(T, columnName)
         else
             T.(columnName) = str2double(string(T.(columnName)));
         end
+    end
+
+end
+
+function rows = session_peer_rows_local(T, rowIdx)
+
+    rows = rowIdx;
+    required = {'BidsSubject', 'BidsSession'};
+    if ~all(ismember(required, T.Properties.VariableNames))
+        return;
+    end
+
+    subjectValues = T.BidsSubject;
+    if ~isnumeric(subjectValues)
+        subjectValues = str2double(string(subjectValues));
+    end
+    sessionValues = string(T.BidsSession);
+    sessionValues(ismissing(sessionValues)) = "";
+
+    subjectValue = subjectValues(rowIdx);
+    sessionValue = sessionValues(rowIdx);
+    if isnan(subjectValue) || strlength(strtrim(sessionValue)) == 0
+        return;
+    end
+
+    mask = subjectValues == subjectValue & sessionValues == sessionValue;
+    if ismember('DoImport', T.Properties.VariableNames)
+        doImport = T.DoImport;
+        if ~isnumeric(doImport)
+            doImport = str2double(string(doImport));
+        end
+        mask = mask & doImport == 1;
+    end
+
+    matchedRows = find(mask);
+    if ~isempty(matchedRows)
+        rows = matchedRows;
+    end
+
+end
+
+function T = copy_row_to_rows_local(T, rowIdx, rows, columnNames)
+
+    for k = 1:numel(columnNames)
+        name = columnNames{k};
+        if ~ismember(name, T.Properties.VariableNames)
+            continue;
+        end
+
+        value = T.(name)(rowIdx, :);
+        T.(name)(rows, :) = repmat(value, numel(rows), 1);
     end
 
 end

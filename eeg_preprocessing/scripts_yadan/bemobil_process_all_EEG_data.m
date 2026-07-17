@@ -42,7 +42,7 @@ set(groot, 'DefaultFigureVisible', 'off');
 run(fullfile(fileparts(mfilename('fullpath')), 'paths.m'));
 
 if ~exist(mappingFile, 'file')
-    error('Import table not found:\n%s\nPlease run import_table.m and bemobil_import_resample_merge.m first.', mappingFile);
+    error('Import table not found:\n%s\nPlease run import_table.m and bemobil_import.m first.', mappingFile);
 end
 
 %% ========================================================================
@@ -104,11 +104,12 @@ hide_all_figures();
 %  LOAD BEMOBIL CONFIGURATION
 %  ========================================================================
 
-run(fullfile(scriptsFolder, 'bemobil_config_.m'));
+run(fullfile(fileparts(mfilename('fullpath')), 'bemobil_config_.m'));
 
 % Keep one clean base config.
 % This is important because channels_to_remove will be adjusted per file.
 base_bemobil_config = bemobil_config;
+preprocessingConfigSignature = struct_signature(base_bemobil_config);
 
 hide_all_figures();
 
@@ -144,7 +145,7 @@ requiredColumns = { ...
 for c = 1:length(requiredColumns)
     if ~ismember(requiredColumns{c}, sourceMap.Properties.VariableNames)
         error(['Import table is missing required column: %s\n' ...
-               'Please run bemobil_import_resample_merge.m first, because it writes RawSetPath, RawSetStatus, and RecommendedDoPreprocess.'], ...
+               'Please run bemobil_import.m first, because it writes RawSetPath, RawSetStatus, and RecommendedDoPreprocess.'], ...
                requiredColumns{c});
     end
 end
@@ -276,6 +277,7 @@ for r = 1:length(rowsToProcess)
     hide_all_figures();
 
     rowIdx = rowsToProcess(r);
+    sessionRows = session_peer_rows(sourceMap, rowIdx);
 
     % Reset config for each file.
     bemobil_config = base_bemobil_config;
@@ -304,7 +306,7 @@ for r = 1:length(rowsToProcess)
         );
 
         sourceMap = ensure_string_column(sourceMap, 'PreprocessingDate');
-        sourceMap.PreprocessingDate(rowIdx) = string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
+        sourceMap.PreprocessingDate(sessionRows) = string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
 
         writetable(sourceMap, mappingFile);
         continue;
@@ -322,7 +324,7 @@ for r = 1:length(rowsToProcess)
         );
 
         sourceMap = ensure_string_column(sourceMap, 'PreprocessingDate');
-        sourceMap.PreprocessingDate(rowIdx) = string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
+        sourceMap.PreprocessingDate(sessionRows) = string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
 
         writetable(sourceMap, mappingFile);
         continue;
@@ -340,7 +342,7 @@ for r = 1:length(rowsToProcess)
         );
 
         sourceMap = ensure_string_column(sourceMap, 'PreprocessingDate');
-        sourceMap.PreprocessingDate(rowIdx) = string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
+        sourceMap.PreprocessingDate(sessionRows) = string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
 
         writetable(sourceMap, mappingFile);
         continue;
@@ -398,8 +400,8 @@ for r = 1:length(rowsToProcess)
         sourceMap = ensure_string_column(sourceMap, 'ImportedSetPath');
         sourceMap = ensure_string_column(sourceMap, 'PreprocessingDate');
 
-        sourceMap.ImportedSetPath(rowIdx) = string(importedSetPath);
-        sourceMap.PreprocessingDate(rowIdx) = string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
+        sourceMap.ImportedSetPath(sessionRows) = string(importedSetPath);
+        sourceMap.PreprocessingDate(sessionRows) = string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
 
         writetable(sourceMap, mappingFile);
 
@@ -429,6 +431,11 @@ for r = 1:length(rowsToProcess)
         [processingSubjectFolder '_' bemobil_config.preprocessed_filename] ...
     );
 
+    basicPreparedSetPath = fullfile( ...
+        preprocessedFolder, ...
+        [processingSubjectFolder '_' bemobil_config.basic_prepared_filename] ...
+    );
+
     % Do NOT create the single-subject analysis folder here.
     % This script only performs basic preprocessing.
     % The 5_single-subject-EEG-analysis folder belongs to the AMICA/ICA stage
@@ -445,23 +452,31 @@ for r = 1:length(rowsToProcess)
     sourceMap = ensure_string_column(sourceMap, 'PreprocessingStatus');
     sourceMap = ensure_string_column(sourceMap, 'PreprocessingDate');
     sourceMap = ensure_string_column(sourceMap, 'PreprocessingNotes');
+    sourceMap = ensure_string_column(sourceMap, 'PreprocessingInputSignature');
 
-    sourceMap.ProcessingSubjectLabel(rowIdx) = string(processingSubjectLabel);
-    sourceMap.ProcessingSubjectFolder(rowIdx) = string(processingSubjectFolder);
-    sourceMap.ImportedSetPath(rowIdx) = string(importedSetPath);
-    sourceMap.PreprocessedSetPath(rowIdx) = string(preprocessedSetPath);
+    sourceMap.ProcessingSubjectLabel(sessionRows) = string(processingSubjectLabel);
+    sourceMap.ProcessingSubjectFolder(sessionRows) = string(processingSubjectFolder);
+    sourceMap.ImportedSetPath(sessionRows) = string(importedSetPath);
+    sourceMap.PreprocessedSetPath(sessionRows) = string(preprocessedSetPath);
+
+    expectedInputSignature = file_signature(importedSetPath) + "|cfg=" + preprocessingConfigSignature;
+    sessionAlreadyCompleted = any( ...
+        sourceMap.PreprocessingStatus(sessionRows) == "completed" & ...
+        sourceMap.PreprocessingInputSignature(sessionRows) == expectedInputSignature);
 
     %% --------------------------------------------------------------------
     %  SKIP ALREADY COMPLETED PREPROCESSING IF NOT RECOMPUTING
     %  --------------------------------------------------------------------
 
     if force_recompute == 0 && ...
-            sourceMap.PreprocessingStatus(rowIdx) == "completed" && ...
+            sessionAlreadyCompleted && ...
             exist(preprocessedSetPath, 'file') == 2
 
         fprintf('\nPreprocessing already completed. Skipping this raw set:\n%s\n', preprocessedSetPath);
 
-        sourceMap.PreprocessingNotes(rowIdx) = ...
+        sourceMap.PreprocessingStatus(sessionRows) = "completed";
+        sourceMap.PreprocessingInputSignature(sessionRows) = expectedInputSignature;
+        sourceMap.PreprocessingNotes(sessionRows) = ...
             "Skipped because preprocessing was already completed and force_recompute = 0.";
 
         writetable(sourceMap, mappingFile);
@@ -470,13 +485,22 @@ for r = 1:length(rowsToProcess)
 
     end
 
+    rowForceRecompute = force_recompute ~= 0;
+    if (exist(preprocessedSetPath, 'file') == 2 || ...
+            exist(basicPreparedSetPath, 'file') == 2) && ...
+            ~sessionAlreadyCompleted
+        rowForceRecompute = true;
+        fprintf('\nExisting preprocessing output is stale or unverified. Forcing a complete BeMoBIL recomputation.\n');
+    end
+
     %% --------------------------------------------------------------------
     %  UPDATE TABLE BEFORE PROCESSING
     %  --------------------------------------------------------------------
 
-    sourceMap.PreprocessingStatus(rowIdx) = "running";
-    sourceMap.PreprocessingDate(rowIdx) = string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
-    sourceMap.PreprocessingNotes(rowIdx) = "";
+    sourceMap.PreprocessingStatus(sessionRows) = "running";
+    sourceMap.PreprocessingDate(sessionRows) = string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
+    sourceMap.PreprocessingNotes(sessionRows) = "";
+    sourceMap.PreprocessingInputSignature(sessionRows) = expectedInputSignature;
 
     writetable(sourceMap, mappingFile);
 
@@ -515,12 +539,20 @@ for r = 1:length(rowsToProcess)
 
     fprintf('\nLoading imported EEGLAB file:\n%s\nfrom:\n%s\n', input_filename, input_filepath);
 
-    EEG = pop_loadset( ...
-        'filename', input_filename, ...
-        'filepath', input_filepath ...
-    );
+    try
+        EEG = pop_loadset( ...
+            'filename', input_filename, ...
+            'filepath', input_filepath ...
+        );
 
-    EEG = eeg_checkset(EEG);
+        EEG = eeg_checkset(EEG);
+    catch ME
+        sourceMap = update_mapping_status(sourceMap, rowIdx, ...
+            "PreprocessingStatus", "failed_load_raw_set", ...
+            "PreprocessingNotes", string(ME.message));
+        writetable(sourceMap, mappingFile);
+        continue;
+    end
 
     hide_all_figures();
 
@@ -535,6 +567,13 @@ for r = 1:length(rowsToProcess)
     EEG.etc.processing_subject_label = processingSubjectLabel;
     EEG.etc.raw_set_status = rawSetStatus;
     EEG.etc.raw_set_path = importedSetPath;
+    EEG.etc.preprocessing_input_signature = char(expectedInputSignature);
+    EEG.etc.preprocessing_config_signature = char(preprocessingConfigSignature);
+
+    sourceRows = find(sourceMap.RawSetPath == string(importedSetPath));
+    EEG.etc.source_original_xdf_names = sourceMap.FileName(sourceRows);
+    EEG.etc.source_original_xdf_paths = sourceMap.XdfPath(sourceRows);
+    EEG.etc.source_run_numbers = sourceMap.RunNumber(sourceRows);
 
     if ismember('EEGStreamName', sourceMap.Properties.VariableNames)
         EEG.etc.source_eeg_stream_name = char(sourceMap.EEGStreamName(rowIdx));
@@ -618,7 +657,7 @@ for r = 1:length(rowsToProcess)
             ALLEEG, ...
             EEG, ...
             CURRENTSET, ...
-            force_recompute);
+            rowForceRecompute);
 
         hide_all_figures();
 
@@ -635,7 +674,7 @@ for r = 1:length(rowsToProcess)
         );
 
         sourceMap = ensure_string_column(sourceMap, 'PreprocessingDate');
-        sourceMap.PreprocessingDate(rowIdx) = string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
+        sourceMap.PreprocessingDate(sessionRows) = string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
 
         writetable(sourceMap, mappingFile);
 
@@ -647,19 +686,29 @@ for r = 1:length(rowsToProcess)
     %  CHECK OUTPUT AND UPDATE TABLE
     %  --------------------------------------------------------------------
 
-    if exist(preprocessedSetPath, 'file')
+    outputProvenanceOK = isfield(EEG_preprocessed, 'etc') && ...
+        isfield(EEG_preprocessed.etc, 'preprocessing_input_signature') && ...
+        string(EEG_preprocessed.etc.preprocessing_input_signature) == expectedInputSignature;
 
-        sourceMap.PreprocessingStatus(rowIdx) = "completed";
-        sourceMap.PreprocessingNotes(rowIdx) = "";
+    if exist(preprocessedSetPath, 'file') && outputProvenanceOK
+
+        sourceMap.PreprocessingStatus(sessionRows) = "completed";
+        sourceMap.PreprocessingNotes(sessionRows) = "";
+
+    elseif exist(preprocessedSetPath, 'file')
+
+        sourceMap.PreprocessingStatus(sessionRows) = "failed_output_provenance_mismatch";
+        sourceMap.PreprocessingNotes(sessionRows) = ...
+            "Preprocessed output exists, but its stored input signature does not match the current raw set/config.";
 
     else
 
-        sourceMap.PreprocessingStatus(rowIdx) = "finished_but_output_file_not_found";
-        sourceMap.PreprocessingNotes(rowIdx) = "BeMoBIL finished, but expected preprocessed .set was not found. Check output folders.";
+        sourceMap.PreprocessingStatus(sessionRows) = "finished_but_output_file_not_found";
+        sourceMap.PreprocessingNotes(sessionRows) = "BeMoBIL finished, but expected preprocessed .set was not found. Check output folders.";
 
     end
 
-    sourceMap.PreprocessingDate(rowIdx) = string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
+    sourceMap.PreprocessingDate(sessionRows) = string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
 
     writetable(sourceMap, mappingFile);
 
@@ -806,7 +855,83 @@ function T = update_mapping_status(T, rowIdx, statusColumn, statusValue, notesCo
     T = ensure_string_column(T, char(statusColumn));
     T = ensure_string_column(T, char(notesColumn));
 
-    T.(char(statusColumn))(rowIdx) = string(statusValue);
-    T.(char(notesColumn))(rowIdx) = string(notesValue);
+    rows = session_peer_rows(T, rowIdx);
+    T.(char(statusColumn))(rows) = string(statusValue);
+    T.(char(notesColumn))(rows) = string(notesValue);
+
+end
+
+function rows = session_peer_rows(T, rowIdx)
+
+    rows = rowIdx;
+
+    required = {'BidsSubject', 'BidsSession'};
+    if ~all(ismember(required, T.Properties.VariableNames))
+        return;
+    end
+
+    subjectValues = to_numeric_column(T.BidsSubject);
+    sessionValues = string(T.BidsSession);
+    sessionValues(ismissing(sessionValues)) = "";
+
+    subjectValue = subjectValues(rowIdx);
+    sessionValue = sessionValues(rowIdx);
+
+    if isnan(subjectValue) || strlength(strtrim(sessionValue)) == 0
+        return;
+    end
+
+    mask = subjectValues == subjectValue & sessionValues == sessionValue;
+
+    if ismember('DoImport', T.Properties.VariableNames)
+        doImport = to_numeric_column(T.DoImport);
+        mask = mask & doImport == 1;
+    end
+
+    matchedRows = find(mask);
+    if ~isempty(matchedRows)
+        rows = matchedRows;
+    end
+
+end
+
+function signature = file_signature(filePath)
+
+    info = dir(char(filePath));
+    if isempty(info)
+        signature = "missing";
+    else
+        signature = string(info.bytes) + "|" + compose('%.15g', info.datenum);
+        [folder, base, ext] = fileparts(char(filePath));
+        if strcmpi(ext, '.set')
+            fdtInfo = dir(fullfile(folder, [base '.fdt']));
+            if ~isempty(fdtInfo)
+                signature = signature + "|fdt=" + string(fdtInfo.bytes) + ...
+                    "|" + compose('%.15g', fdtInfo.datenum);
+            end
+        end
+    end
+
+end
+
+function signature = struct_signature(S)
+
+    try
+        txt = jsonencode(orderfields(S));
+    catch
+        txt = evalc('disp(S)');
+    end
+
+    bytes = double(unicode2native(txt, 'UTF-8'));
+    if isempty(bytes)
+        signature = "0-0-0";
+        return;
+    end
+
+    idx = 1:numel(bytes);
+    m = 4294967291;
+    s1 = mod(sum(bytes), m);
+    s2 = mod(sum(mod(bytes .* mod(idx, m), m)), m);
+    signature = string(numel(bytes)) + "-" + compose('%.0f', s1) + "-" + compose('%.0f', s2);
 
 end

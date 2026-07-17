@@ -43,7 +43,7 @@ set(groot, 'DefaultFigureVisible', 'off');
 run(fullfile(fileparts(mfilename('fullpath')), 'paths.m'));
 
 if ~exist(mappingFile, 'file')
-    error('Import table not found:\n%s\nPlease run import_table.m, bemobil_import_resample_merge.m, preprocessing, and QC first.', mappingFile);
+    error('Import table not found:\n%s\nPlease run import_table.m, bemobil_import.m, preprocessing, and QC first.', mappingFile);
 end
 
 %% ========================================================================
@@ -103,7 +103,7 @@ hide_all_figures();
 %  LOAD BEMOBIL CONFIGURATION
 %  ========================================================================
 
-run(fullfile(scriptsFolder, 'bemobil_config_.m'));
+run(fullfile(fileparts(mfilename('fullpath')), 'bemobil_config_.m'));
 
 hide_all_figures();
 
@@ -117,6 +117,7 @@ bemobil_config.AMICA_max_iter = 2000;
 
 % Keep 4 threads unless your PC crashes or becomes unstable.
 bemobil_config.max_threads = 4;
+amicaConfigSignature = struct_signature(bemobil_config);
 
 fprintf('\nAMICA settings:\n');
 fprintf('AMICA_max_iter: %d\n', bemobil_config.AMICA_max_iter);
@@ -157,7 +158,7 @@ requiredColumns = { ...
 for c = 1:length(requiredColumns)
     if ~ismember(requiredColumns{c}, sourceMap.Properties.VariableNames)
         error(['Import table is missing required column: %s\n' ...
-               'Please run preprocessing and check_preprocessed_EEG_1.m first.'], ...
+               'Please run preprocessing and check_preprocessed_EEG.m first.'], ...
                requiredColumns{c});
     end
 end
@@ -255,8 +256,13 @@ else
 
     else
 
+        missingDoAMICA = isnan(sourceMap.DoAMICA);
+        sourceMap.DoAMICA(missingDoAMICA) = 0;
+        sourceMap.DoAMICA(missingDoAMICA & readyForAMICA) = 1;
+        writetable(sourceMap, mappingFile);
+
         fprintf('\nDoAMICA column already existed.\n');
-        fprintf('Using existing DoAMICA values from the table because reset_DoAMICA_from_PreprocessingQC = false.\n');
+        fprintf('Preserved explicit DoAMICA values and filled only missing values from preprocessing QC.\n');
 
     end
 
@@ -278,6 +284,7 @@ sourceMap = ensure_string_column(sourceMap, 'DipfittedSetPath');
 sourceMap = ensure_string_column(sourceMap, 'PreprocessedICASetPath');
 sourceMap = ensure_string_column(sourceMap, 'CleanedICASetPath');
 sourceMap = ensure_string_column(sourceMap, 'AMICAOutputStatus');
+sourceMap = ensure_string_column(sourceMap, 'AMICAInputSignature');
 
 preDate = parse_datetime_column(sourceMap.PreprocessingDate);
 amicaDate = parse_datetime_column(sourceMap.AMICADate);
@@ -385,6 +392,7 @@ for r = 1:length(rowsToProcess)
     hide_all_figures();
 
     rowIdx = rowsToProcess(r);
+    sessionRows = session_peer_rows(sourceMap, rowIdx);
 
     bidsSubject = sourceMap.BidsSubject(rowIdx);
     bidsSession = char(sourceMap.BidsSession(rowIdx));
@@ -490,7 +498,7 @@ for r = 1:length(rowsToProcess)
         );
 
         sourceMap = ensure_string_column(sourceMap, 'PreprocessedSetPath');
-        sourceMap.PreprocessedSetPath(rowIdx) = string(preprocessedSetPath);
+        sourceMap.PreprocessedSetPath(sessionRows) = string(preprocessedSetPath);
 
         writetable(sourceMap, mappingFile);
         continue;
@@ -513,8 +521,13 @@ for r = 1:length(rowsToProcess)
     sourceMap = ensure_string_column(sourceMap, 'CleanedICASetPath');
     sourceMap = ensure_string_column(sourceMap, 'AMICAOutputStatus');
     sourceMap = ensure_string_column(sourceMap, 'PreprocessedSetPath');
+    sourceMap = ensure_string_column(sourceMap, 'AMICAInputSignature');
 
-    sourceMap.PreprocessedSetPath(rowIdx) = string(preprocessedSetPath);
+    sourceMap.PreprocessedSetPath(sessionRows) = string(preprocessedSetPath);
+
+    expectedAMICAInputSignature = file_signature(preprocessedSetPath) + ...
+        "|cfg=" + amicaConfigSignature;
+    sessionMarkedStale = any(sourceMap.AMICAStatus(sessionRows) == "stale_needs_rerun");
 
     [existingAMICASetPath, existingDipfittedSetPath, existingPreprocessedICASetPath, ...
         existingCleanedICASetPath, existingOutputStatus, amicaCandidates] = find_all_amica_outputs( ...
@@ -522,14 +535,21 @@ for r = 1:length(rowsToProcess)
         bemobil_config, ...
         processingSubjectFolder);
 
+    existingProvenanceOK = false;
+    if existingOutputStatus == "complete_outputs_verified"
+        existingProvenanceOK = verify_amica_output_provenance( ...
+            existingPreprocessedICASetPath, expectedAMICAInputSignature);
+    end
+
     %% --------------------------------------------------------------------
     %  SKIP EXISTING COMPLETE AMICA OUTPUTS IF NOT RECOMPUTING
     %  --------------------------------------------------------------------
 
     if skip_existing_complete_outputs && ...
             force_recompute_amica == 0 && ...
-            sourceMap.AMICAStatus(rowIdx) ~= "stale_needs_rerun" && ...
-            existingOutputStatus == "complete_outputs_verified"
+            ~sessionMarkedStale && ...
+            existingOutputStatus == "complete_outputs_verified" && ...
+            existingProvenanceOK
 
         fprintf('\nAll expected AMICA/DIPFIT/output5 files already exist. Updating CSV and skipping AMICA rerun.\n');
         fprintf('AMICA set:\n%s\n', existingAMICASetPath);
@@ -537,13 +557,14 @@ for r = 1:length(rowsToProcess)
         fprintf('Preprocessed+ICA set:\n%s\n', existingPreprocessedICASetPath);
         fprintf('Cleaned ICA set:\n%s\n', existingCleanedICASetPath);
 
-        sourceMap.AMICAStatus(rowIdx) = "completed";
-        sourceMap.AMICASetPath(rowIdx) = existingAMICASetPath;
-        sourceMap.DipfittedSetPath(rowIdx) = existingDipfittedSetPath;
-        sourceMap.PreprocessedICASetPath(rowIdx) = existingPreprocessedICASetPath;
-        sourceMap.CleanedICASetPath(rowIdx) = existingCleanedICASetPath;
-        sourceMap.AMICAOutputStatus(rowIdx) = existingOutputStatus;
-        sourceMap.AMICANotes(rowIdx) = ...
+        sourceMap.AMICAStatus(sessionRows) = "completed";
+        sourceMap.AMICASetPath(sessionRows) = existingAMICASetPath;
+        sourceMap.DipfittedSetPath(sessionRows) = existingDipfittedSetPath;
+        sourceMap.PreprocessedICASetPath(sessionRows) = existingPreprocessedICASetPath;
+        sourceMap.CleanedICASetPath(sessionRows) = existingCleanedICASetPath;
+        sourceMap.AMICAOutputStatus(sessionRows) = existingOutputStatus;
+        sourceMap.AMICAInputSignature(sessionRows) = expectedAMICAInputSignature;
+        sourceMap.AMICANotes(sessionRows) = ...
             "Skipped because all expected AMICA/DIPFIT/output5 files already exist, CSV paths were updated, and force_recompute_amica = 0.";
 
         writetable(sourceMap, mappingFile);
@@ -552,8 +573,17 @@ for r = 1:length(rowsToProcess)
 
     end
 
+    rowForceRecomputeAMICA = force_recompute_amica ~= 0 || ...
+        sessionMarkedStale || ...
+        existingOutputStatus ~= "complete_outputs_verified" || ...
+        ~existingProvenanceOK;
+
+    if rowForceRecomputeAMICA
+        fprintf('\nAMICA/DIPFIT outputs are stale, incomplete, or unverified. Forcing full BeMoBIL AMICA recomputation.\n');
+    end
+
     if force_recompute_amica == 0 && ...
-            sourceMap.AMICAStatus(rowIdx) == "completed" && ...
+            any(sourceMap.AMICAStatus(sessionRows) == "completed") && ...
             existingOutputStatus ~= "complete_outputs_verified"
 
         fprintf('\nWARNING: AMICAStatus is completed, but expected output files are incomplete.\n');
@@ -571,17 +601,18 @@ for r = 1:length(rowsToProcess)
     %  UPDATE TABLE BEFORE AMICA
     %  --------------------------------------------------------------------
 
-    sourceMap.AMICAStatus(rowIdx) = "running";
-    sourceMap.AMICADate(rowIdx) = string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
-    sourceMap.AMICANotes(rowIdx) = "";
+    sourceMap.AMICAStatus(sessionRows) = "running";
+    sourceMap.AMICADate(sessionRows) = string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
+    sourceMap.AMICANotes(sessionRows) = "";
 
     % Clear stale output paths before this AMICA run.
     % New paths are written only after the current run outputs are verified.
-    sourceMap.AMICASetPath(rowIdx) = "";
-    sourceMap.DipfittedSetPath(rowIdx) = "";
-    sourceMap.PreprocessedICASetPath(rowIdx) = "";
-    sourceMap.CleanedICASetPath(rowIdx) = "";
-    sourceMap.AMICAOutputStatus(rowIdx) = "running_outputs_not_verified";
+    sourceMap.AMICASetPath(sessionRows) = "";
+    sourceMap.DipfittedSetPath(sessionRows) = "";
+    sourceMap.PreprocessedICASetPath(sessionRows) = "";
+    sourceMap.CleanedICASetPath(sessionRows) = "";
+    sourceMap.AMICAOutputStatus(sessionRows) = "running_outputs_not_verified";
+    sourceMap.AMICAInputSignature(sessionRows) = expectedAMICAInputSignature;
 
     writetable(sourceMap, mappingFile);
 
@@ -640,6 +671,8 @@ for r = 1:length(rowsToProcess)
     EEG_preprocessed.etc.processing_subject_label = processingSubjectLabel;
     EEG_preprocessed.etc.preprocessing_status_for_amica = char(sourceMap.PreprocessingStatus(rowIdx));
     EEG_preprocessed.etc.preprocessing_qc_status_for_amica = char(sourceMap.PreprocessingQCStatus(rowIdx));
+    EEG_preprocessed.etc.amica_input_signature = char(expectedAMICAInputSignature);
+    EEG_preprocessed.etc.amica_config_signature = char(amicaConfigSignature);
 
     if ismember('EEGStreamName', sourceMap.Properties.VariableNames)
         EEG_preprocessed.etc.source_eeg_stream_name = char(sourceMap.EEGStreamName(rowIdx));
@@ -690,6 +723,25 @@ for r = 1:length(rowsToProcess)
 
     end
 
+    [amicaDataRank, amicaDataRankValid] = get_rank_metadata(EEG_preprocessed);
+    if ~amicaDataRankValid
+
+        warning('Invalid or missing EEG.etc.rank before AMICA. Skipping.');
+
+        sourceMap = update_amica_status( ...
+            sourceMap, rowIdx, ...
+            "failed_invalid_rank_metadata", ...
+            "EEG.etc.rank must be a finite integer between 1 and EEG.nbchan.", ...
+            "" ...
+        );
+
+        writetable(sourceMap, mappingFile);
+        continue;
+
+    end
+
+    fprintf('AMICA PCA rank from EEG.etc.rank: %d\n', amicaDataRank);
+
     %% --------------------------------------------------------------------
     %  RUN AMICA ONLY
     %  --------------------------------------------------------------------
@@ -704,7 +756,7 @@ for r = 1:length(rowsToProcess)
             CURRENTSET, ...
             processingSubjectLabel, ...
             bemobil_config, ...
-            force_recompute_amica);
+            rowForceRecomputeAMICA);
 
         hide_all_figures();
 
@@ -734,17 +786,22 @@ for r = 1:length(rowsToProcess)
         bemobil_config, ...
         processingSubjectFolder);
 
-    sourceMap.AMICADate(rowIdx) = string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
-    sourceMap.AMICASetPath(rowIdx) = foundAMICASetPath;
-    sourceMap.DipfittedSetPath(rowIdx) = foundDipfittedSetPath;
-    sourceMap.PreprocessedICASetPath(rowIdx) = foundPreprocessedICASetPath;
-    sourceMap.CleanedICASetPath(rowIdx) = foundCleanedICASetPath;
-    sourceMap.AMICAOutputStatus(rowIdx) = amicaOutputStatus;
+    if amicaOutputStatus == "complete_outputs_verified" && ...
+            ~verify_amica_output_provenance(foundPreprocessedICASetPath, expectedAMICAInputSignature)
+        amicaOutputStatus = "output_provenance_mismatch";
+    end
+
+    sourceMap.AMICADate(sessionRows) = string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
+    sourceMap.AMICASetPath(sessionRows) = foundAMICASetPath;
+    sourceMap.DipfittedSetPath(sessionRows) = foundDipfittedSetPath;
+    sourceMap.PreprocessedICASetPath(sessionRows) = foundPreprocessedICASetPath;
+    sourceMap.CleanedICASetPath(sessionRows) = foundCleanedICASetPath;
+    sourceMap.AMICAOutputStatus(sessionRows) = amicaOutputStatus;
 
     if amicaOutputStatus == "complete_outputs_verified"
 
-        sourceMap.AMICAStatus(rowIdx) = "completed";
-        sourceMap.AMICANotes(rowIdx) = "";
+        sourceMap.AMICAStatus(sessionRows) = "completed";
+        sourceMap.AMICANotes(sessionRows) = "";
 
         fprintf('\nAMICA, DIPFIT, preprocessed+ICA, and cleaned ICA outputs found.\n');
         fprintf('AMICA set:\n%s\n', foundAMICASetPath);
@@ -752,13 +809,21 @@ for r = 1:length(rowsToProcess)
         fprintf('Preprocessed+ICA set:\n%s\n', foundPreprocessedICASetPath);
         fprintf('Cleaned ICA set:\n%s\n', foundCleanedICASetPath);
 
+    elseif amicaOutputStatus == "output_provenance_mismatch"
+
+        sourceMap.AMICAStatus(sessionRows) = "failed_output_provenance_mismatch";
+        sourceMap.AMICANotes(sessionRows) = ...
+            "AMICA outputs exist, but preprocessed_and_ICA does not contain the current AMICA input signature.";
+
+        fprintf('\nWARNING: AMICA outputs failed provenance verification.\n');
+
     elseif strlength(foundAMICASetPath) > 0 || ...
             strlength(foundDipfittedSetPath) > 0 || ...
             strlength(foundPreprocessedICASetPath) > 0 || ...
             strlength(foundCleanedICASetPath) > 0
 
-        sourceMap.AMICAStatus(rowIdx) = "partial_outputs_missing";
-        sourceMap.AMICANotes(rowIdx) = ...
+        sourceMap.AMICAStatus(sessionRows) = "partial_outputs_missing";
+        sourceMap.AMICANotes(sessionRows) = ...
             "AMICA function finished, but one or more expected AMICA/DIPFIT/ICA output files were missing.";
 
         fprintf('\nWARNING: AMICA finished, but expected outputs are incomplete.\n');
@@ -771,8 +836,8 @@ for r = 1:length(rowsToProcess)
 
     else
 
-        sourceMap.AMICAStatus(rowIdx) = "finished_but_output_file_not_found";
-        sourceMap.AMICANotes(rowIdx) = ...
+        sourceMap.AMICAStatus(sessionRows) = "finished_but_output_file_not_found";
+        sourceMap.AMICANotes(sessionRows) = ...
             "AMICA function finished, but no expected AMICA/DIPFIT/ICA .set files were found.";
 
         fprintf('\nWARNING: AMICA finished, but no expected output .set files were found.\n');
@@ -1053,13 +1118,6 @@ function [foundPath, candidates] = find_expected_output_file( ...
 
     end
 
-    % Strict recursive fallback by exact filename only.
-    recursiveCandidates = dir(fullfile(outputFolder, '**', outputFilename));
-
-    if ~isempty(recursiveCandidates)
-        foundPath = string(fullfile(recursiveCandidates(1).folder, recursiveCandidates(1).name));
-    end
-
 end
 
 
@@ -1074,12 +1132,136 @@ function T = update_amica_status(T, rowIdx, statusValue, notesValue, setPathValu
     T = ensure_string_column(T, 'CleanedICASetPath');
     T = ensure_string_column(T, 'AMICAOutputStatus');
 
-    T.AMICAStatus(rowIdx) = string(statusValue);
-    T.AMICANotes(rowIdx) = string(notesValue);
-    T.AMICADate(rowIdx) = string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
+    rows = session_peer_rows(T, rowIdx);
+    T.AMICAStatus(rows) = string(statusValue);
+    T.AMICANotes(rows) = string(notesValue);
+    T.AMICADate(rows) = string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
 
     if strlength(string(setPathValue)) > 0
-        T.AMICASetPath(rowIdx) = string(setPathValue);
+        T.AMICASetPath(rows) = string(setPathValue);
+    end
+
+end
+
+function [rankValue, valid] = get_rank_metadata(EEG)
+
+    rankValue = NaN;
+    valid = false;
+
+    if ~isfield(EEG, 'etc') || ~isfield(EEG.etc, 'rank')
+        return;
+    end
+
+    try
+        if isnumeric(EEG.etc.rank) || islogical(EEG.etc.rank)
+            if isscalar(EEG.etc.rank)
+                rankValue = double(EEG.etc.rank);
+            end
+        else
+            parsed = str2double(string(EEG.etc.rank));
+            if isscalar(parsed)
+                rankValue = parsed;
+            end
+        end
+    catch
+        rankValue = NaN;
+    end
+
+    valid = isfinite(rankValue) && rankValue >= 1 && ...
+        rankValue <= EEG.nbchan && abs(rankValue - round(rankValue)) < 1e-6;
+
+end
+
+function rows = session_peer_rows(T, rowIdx)
+
+    rows = rowIdx;
+    required = {'BidsSubject', 'BidsSession'};
+    if ~all(ismember(required, T.Properties.VariableNames))
+        return;
+    end
+
+    subjectValues = T.BidsSubject;
+    if ~isnumeric(subjectValues)
+        subjectValues = str2double(string(subjectValues));
+    end
+    sessionValues = string(T.BidsSession);
+    sessionValues(ismissing(sessionValues)) = "";
+
+    subjectValue = subjectValues(rowIdx);
+    sessionValue = sessionValues(rowIdx);
+    if isnan(subjectValue) || strlength(strtrim(sessionValue)) == 0
+        return;
+    end
+
+    mask = subjectValues == subjectValue & sessionValues == sessionValue;
+    if ismember('DoImport', T.Properties.VariableNames)
+        doImport = T.DoImport;
+        if ~isnumeric(doImport)
+            doImport = str2double(string(doImport));
+        end
+        mask = mask & doImport == 1;
+    end
+
+    matchedRows = find(mask);
+    if ~isempty(matchedRows)
+        rows = matchedRows;
+    end
+
+end
+
+function signature = file_signature(filePath)
+
+    info = dir(char(filePath));
+    if isempty(info)
+        signature = "missing";
+    else
+        signature = string(info.bytes) + "|" + compose('%.15g', info.datenum);
+        [folder, base, ext] = fileparts(char(filePath));
+        if strcmpi(ext, '.set')
+            fdtInfo = dir(fullfile(folder, [base '.fdt']));
+            if ~isempty(fdtInfo)
+                signature = signature + "|fdt=" + string(fdtInfo.bytes) + ...
+                    "|" + compose('%.15g', fdtInfo.datenum);
+            end
+        end
+    end
+
+end
+
+function signature = struct_signature(S)
+
+    try
+        txt = jsonencode(orderfields(S));
+    catch
+        txt = evalc('disp(S)');
+    end
+
+    bytes = double(unicode2native(txt, 'UTF-8'));
+    if isempty(bytes)
+        signature = "0-0-0";
+        return;
+    end
+
+    idx = 1:numel(bytes);
+    m = 4294967291;
+    s1 = mod(sum(bytes), m);
+    s2 = mod(sum(mod(bytes .* mod(idx, m), m)), m);
+    signature = string(numel(bytes)) + "-" + compose('%.0f', s1) + "-" + compose('%.0f', s2);
+
+end
+
+function ok = verify_amica_output_provenance(setPath, expectedSignature)
+
+    ok = false;
+    try
+        [folder, base, ext] = fileparts(char(setPath));
+        EEG = pop_loadset('filename', [base ext], 'filepath', folder);
+        EEG = eeg_checkset(EEG);
+        ok = isfield(EEG, 'etc') && isfield(EEG.etc, 'amica_input_signature') && ...
+            string(EEG.etc.amica_input_signature) == string(expectedSignature);
+    catch ME
+        warning('Could not verify AMICA output provenance: %s', ME.message);
+        ok = false;
     end
 
 end

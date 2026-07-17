@@ -1,16 +1,16 @@
 %% Central path settings
 % Only edit this file when paths change.
 
-projectRoot = 'E:\master_thesis\HipExo-EEG-Study_1';
+projectRoot = '/Users/dydan/master_thesis/HipExo-EEG-Study';
 
-projectFolder = fullfile(projectRoot, 'EEG_preprocessing_Yadan');
+projectFolder = fullfile(projectRoot, 'eeg_preprocessing');
 
-eeglabFolder    = 'D:\eeglab_current\eeglab2026.0.0';
-fieldtripFolder = fullfile(projectRoot, 'fieldtrip-20260601');
+eeglabFolder    = '/Users/dydan/master_thesis/eeglab2026.0.0';
+fieldtripFolder = '/Users/dydan/master_thesis/fieldtrip-20260617';
 
 rawDataFolder = fullfile(projectFolder, 'raw_data_PilotTest2');
 bemobilFolder = fullfile(projectFolder, 'BeMoBIL');
-scriptsFolder = fullfile(projectFolder, 'scripts_yadan_04072026');
+scriptsFolder = fullfile(projectFolder, 'scripts_yadan');
 outputFolder  = fullfile(projectFolder, 'output_data');
 
 summaryFile = fullfile(outputFolder, 'xdf_file_stream_summary.csv');
@@ -21,7 +21,7 @@ mappingFile     = importTableFile;
 
 importLogFile = fullfile(outputFolder, 'bemobil_xdf2bids_import_log.csv');
 
-amicaTempFolder = 'E:\master_thesis\amica_tmp';
+amicaTempFolder = '/Users/dydan/master_thesis/amica_tmp';
 
 addpath(eeglabFolder);
 addpath(genpath(bemobilFolder));
