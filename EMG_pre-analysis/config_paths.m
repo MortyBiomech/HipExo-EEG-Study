@@ -9,6 +9,7 @@ data_root    = 'C:\2026SSArbeit\data\PilotTest2';
 subject_folder = 'Sub-P2_3';
 subject_id     = 'Pilot2_3';
 experiment_day = 'day2';
+run_id = '001';
 
 % 3. Automatically Generate Full Paths
 addpath(genpath(project_root));

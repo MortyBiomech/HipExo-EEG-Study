@@ -6,9 +6,9 @@ clear;
 addpath(genpath('C:\2026SSArbeit\HipExo-EEG-Study\EMG_pre-analysis'));
 addpath('C:\egglab_task\eeglab2025.1.0\plugins\xdfimport1.2');
 
-data_path = 'C:\2026SSArbeit\data\PilotTest2\Sub-P2_2\day1\data\';
-subject_id = 'Pilot2_2';
-experiment_day = 'day1';
+data_path = 'C:\2026SSArbeit\data\PilotTest2\Sub-P2_3\day2\data\';
+subject_id = 'Pilot2_3';
+experiment_day = 'day2';
 subject_full_id = sprintf('%s_%s', subject_id, experiment_day);
 
 %% 2. Read session folders
@@ -37,7 +37,7 @@ for s = 1:num_sessions
     current_session = conditions{s};
     fprintf('Plotting [%d/%d]: %s... ', s, num_sessions, current_session);
     
-    filename = ['sub-', subject_id, '_', current_session, '_task-Default_run-001_eeg.xdf'];
+    filename = ['sub-', subject_id, '_', experiment_day,'_',current_session, '_task-Default_run-001_eeg.xdf'];
     full_file_path = fullfile(data_path, current_session, 'eeg', filename);
     
     if ~exist(full_file_path, 'file')

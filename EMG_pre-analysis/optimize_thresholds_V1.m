@@ -1,4 +1,4 @@
-function [on, off] = optimize_thresholds(GRF, Right_leg_indx, Left_leg_indx)
+function [on, off] = optimize_thresholds_V1(GRF, Right_leg_indx, Left_leg_indx)
 
     on_values  = 0.01:0.005:0.06;
     off_values = 0.01:0.005:0.06;
@@ -22,15 +22,20 @@ function [on, off] = optimize_thresholds(GRF, Right_leg_indx, Left_leg_indx)
                     continue;
                 end
 
-                stance_R = (TO_R.timestamps - HS_R.timestamps) * 1000;
-                stance_L = (TO_L.timestamps - HS_L.timestamps) * 1000;
-                swing_R  = (HS_R.timestamps(2:end) - TO_R.timestamps(1:end-1)) * 1000;
-                swing_L  = (HS_L.timestamps(2:end) - TO_L.timestamps(1:end-1)) * 1000;
-                DS1      = compute_double_support(HS_R.timestamps, TO_L.timestamps) * 1000;
-                DS2      = compute_double_support(HS_L.timestamps, TO_R.timestamps) * 1000;
+                % Calculate intervals using a robust pairing method to avoid dimensionality errors caused by mismatched array lengths
+                stance_R = compute_intervals(HS_R.timestamps, TO_R.timestamps);
+                stance_L = compute_intervals(HS_L.timestamps, TO_L.timestamps);
+                swing_R  = compute_intervals(TO_R.timestamps, HS_R.timestamps);
+                swing_L  = compute_intervals(TO_L.timestamps, HS_L.timestamps);
+                
+                DS1      = compute_intervals(HS_R.timestamps, TO_L.timestamps);
+                DS2      = compute_intervals(HS_L.timestamps, TO_R.timestamps);
                 DS       = [DS1; DS2];
 
-                if numel(DS) < 2, continue; end
+                % Ensure that a valid time interval has been calculated
+                if numel(DS) < 2 || isempty(stance_R) || isempty(stance_L) || isempty(swing_R) || isempty(swing_L)
+                    continue; 
+                end
 
                 sd_stance_R = std(stance_R);
                 sd_stance_L = std(stance_L);
@@ -45,14 +50,16 @@ function [on, off] = optimize_thresholds(GRF, Right_leg_indx, Left_leg_indx)
                     sd_stance_R, sd_stance_L, ...
                     sd_swing_R,  sd_swing_L,  sd_DS];
 
-            catch
+            catch ME
+                % If debugging is required, you can uncomment the line below to view the specific error message
+                % disp(ME.message);
                 continue;
             end
         end
     end
 
     if isempty(results)
-        error('No valid threshold combination found.');
+        error('No valid threshold combination found. The extracted data phase might be too noisy or too short.');
     end
 
     %% --- Pareto front ------------------------------------------------------
@@ -90,17 +97,15 @@ function [on, off] = optimize_thresholds(GRF, Right_leg_indx, Left_leg_indx)
 end
 
 % =========================================================================
-function DS = compute_double_support(HS_a, TO_b)
-% For each HS in leg A, find the nearest TO in leg B that comes AFTER it.
-% DS = TO_b - HS_a (both feet on ground during this window)
-
-    DS = nan(numel(HS_a), 1);
-    for k = 1:numel(HS_a)
-        idx = find(TO_b > HS_a(k), 1, 'first');
+function intervals = compute_intervals(start_events, end_events)
+% Iterate through each timestamp in `start_events` and find the first timestamp in `end_events` that immediately follows it
+% The result is automatically multiplied by 1000 to convert it to milliseconds (ms)
+    intervals = nan(numel(start_events), 1);
+    for k = 1:numel(start_events)
+        idx = find(end_events > start_events(k), 1, 'first');
         if ~isempty(idx)
-            ds = TO_b(idx) - HS_a(k);
-            DS(k) = ds;
+            intervals(k) = (end_events(idx) - start_events(k)) * 1000;
         end
     end
-    DS = DS(~isnan(DS));
+    intervals = intervals(~isnan(intervals));
 end
