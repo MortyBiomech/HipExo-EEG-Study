@@ -50,16 +50,29 @@ for s = 1:num_sessions
     % Load XDF streams
     [streams, ~] = load_xdf(full_file_path);
     
+    % Use more robust name matching
     grf_idx = find(strcmp(cellfun(@(x) x.info.name, streams, 'UniformOutput', false), 'GRF'));
-    marker_idx = find(strcmp(cellfun(@(x) x.info.name, streams, 'UniformOutput', false), 'GRF_Markers'));
+    marker_idx = find(contains(cellfun(@(x) x.info.name, streams, 'UniformOutput', false), 'GRF_Marker', 'IgnoreCase', true));
     
     if isempty(grf_idx) || isempty(marker_idx)
         fprintf('Missing GRF or Marker streams. Skipping.\n');
         continue;
     end
     
-    GRF = streams{grf_idx};
-    GRF_Marker_Stream = streams{marker_idx};
+    % ---------------------------------------------------------
+    % Fix 1: Ensure only the first matched stream is extracted to prevent array indexing errors
+    % ---------------------------------------------------------
+    GRF = streams{grf_idx(1)};
+    
+    % ---------------------------------------------------------
+    % Fix 2: Defensive check to prevent crashes from "empty" data streams (Header without Payload)
+    % ---------------------------------------------------------
+    if isempty(GRF.time_series) || size(GRF.time_series, 1) == 0
+        fprintf('\n  ⚠️ Warning: GRF stream metadata found, but data payload is empty (0 points). Skipping.\n');
+        continue;
+    end
+    
+    GRF_Marker_Stream = streams{marker_idx(1)};
     marker_labels = GRF_Marker_Stream.time_series;
     
     if iscell(marker_labels) && ~isempty(marker_labels) && iscell(marker_labels{1})
@@ -85,12 +98,24 @@ for s = 1:num_sessions
     plot_time = GRF.time_stamps(valid_idx);
     
     % =========================================================================
-    % MODIFIED: Sum all 4 sensor channels for each leg to get Total GRF
-    % GRF.time_series(indx, valid_idx) returns a 4xN matrix. 
-    % sum(..., 1) adds them row by row, resulting in a 1xN vector.
+    % Fix 3: Dynamic channel safety check to prevent index out of bounds
     % =========================================================================
-    plot_right_grf_total = sum(GRF.time_series(Right_leg_indx, valid_idx), 1);
-    plot_left_grf_total  = sum(GRF.time_series(Left_leg_indx, valid_idx), 1);
+    % Get the actual number of channels (rows) in the current GRF data stream
+    num_grf_channels = size(GRF.time_series, 1);
+    
+    % Filter indices: Remove invalid indices that are greater than the actual number of channels
+    safe_Right_leg_indx = Right_leg_indx(Right_leg_indx <= num_grf_channels);
+    safe_Left_leg_indx  = Left_leg_indx(Left_leg_indx <= num_grf_channels);
+    
+    % If missing channels are detected, print a warning message in the console to alert the operator
+    if length(safe_Right_leg_indx) < length(Right_leg_indx) || length(safe_Left_leg_indx) < length(Left_leg_indx)
+        fprintf('  ⚠️ Warning: Expected 8 GRF channels, but found %d. Adjusted indices to prevent crash.\n', num_grf_channels);
+    end
+    
+    % Perform summation using the safe indices
+    plot_right_grf_total = sum(GRF.time_series(safe_Right_leg_indx, valid_idx), 1);
+    plot_left_grf_total  = sum(GRF.time_series(safe_Left_leg_indx, valid_idx), 1);
+    % =========================================================================
     
     % Create a new individual figure for this session
     figure('Name', sprintf('Total GRF Data - %s', current_session), 'NumberTitle', 'off');

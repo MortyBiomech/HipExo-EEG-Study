@@ -1,11 +1,10 @@
-% Wrapper Script: 结合自动区间截取与自定义步态检测算法
+% Combining automatic interval segmentation with a custom gait detection algorithm.
 clc;
 clear;
-close all;
 
 %% 1. Load Configurations
 run('config_paths.m');
-run('subject_3_infos.m');
+run([current_subject, '_infos.m']); 
 
 %% 2. Dynamic Session Order Setup
 d = dir(data_path);
@@ -41,11 +40,21 @@ for s = 1:num_sessions
     fprintf('\n========================================================\n');
     fprintf('Processing [%d/%d]: %s\n', s, num_sessions, current_session);
     
-    expected_filename = sprintf('sub-%s_%s_%s_task-Default_run-%s_eeg.xdf', ...
-                                subject_id, experiment_day, current_session, run_id);
-    
     session_eeg_dir = fullfile(data_path, current_session, 'eeg');
-    full_file_path = fullfile(session_eeg_dir, expected_filename);
+    xdf_files = dir(fullfile(session_eeg_dir, '*.xdf'));
+    
+    if isempty(xdf_files)
+        warning('No XDF file found. Skipping.');
+        continue;
+    end
+    
+    if ~strcmp(subject_id, 'Pilot2_2')
+        filename = ['sub-', subject_id, '_', experiment_day,'_',current_session, '_task-Default_run-', run_id,'_eeg.xdf'];
+        full_file_path = fullfile(data_path, current_session, 'eeg', filename);
+    else
+        filename = ['sub-', subject_id, '_', current_session, '_task-Default_run-', run_id,'_eeg.xdf'];
+        full_file_path = fullfile(data_path, current_session, 'eeg', filename);
+    end
     
     % Check if the specific concatenated file exists to prevent `load_xdf` from throwing an error due to a missing file
     if ~exist(full_file_path, 'file')
@@ -53,7 +62,7 @@ for s = 1:num_sessions
         continue;
     end
     
-    fprintf('>> Loading target XDF file: %s...\n', expected_filename);
+    fprintf('>> Loading target XDF file: %s...\n', filename);
     
     % Load XDF streams 
     [streams, ~] = load_xdf(full_file_path);
@@ -61,17 +70,24 @@ for s = 1:num_sessions
     grf_idx = find(strcmp(cellfun(@(x) x.info.name, streams, 'UniformOutput', false), 'GRF'));
     marker_idx = find(contains(cellfun(@(x) x.info.name, streams, 'UniformOutput', false), 'GRF_Marker', 'IgnoreCase', true));
     
-    if isempty(grf_idx) || isempty(marker_idx)
-        warning('Missing GRF or GRF_Marker streams for %s. Skipping.', current_session);
+    if isempty(grf_idx)
+        warning('Missing GRF stream for %s. Skipping.', current_session);
         continue;
     end
     
     GRF = streams{grf_idx(1)};
-    GRF_Marker_Stream = streams{marker_idx(1)};
-    marker_labels = GRF_Marker_Stream.time_series;
     
-    if iscell(marker_labels) && ~isempty(marker_labels) && iscell(marker_labels{1})
-        marker_labels = cellfun(@(x) x{1}, marker_labels, 'UniformOutput', false);
+    % 2. Handle cases where markers are missing and guide the system into manual mode
+    if isempty(marker_idx)
+        fprintf('>> No GRF_Marker stream found. Will default to manual selection.\n');
+        marker_labels = {}; % Set to an empty set, which naturally triggers the subsequent manual selection fallback
+    else
+        GRF_Marker_Stream = streams{marker_idx(1)};
+        marker_labels = GRF_Marker_Stream.time_series;
+        
+        if iscell(marker_labels) && ~isempty(marker_labels) && iscell(marker_labels{1})
+            marker_labels = cellfun(@(x) x{1}, marker_labels, 'UniformOutput', false);
+        end
     end
     
     %% 4. Define Walking Window (Auto via Markers or Manual)
@@ -91,7 +107,7 @@ for s = 1:num_sessions
         fprintf('>> No valid START/END markers found. Manual selection required.\n');
     end
     
-    % --- Manual Selection Fallback ---
+    % Manual Selection Fallback 
     if ~auto_success
         % Calculate quick Summed GRF for manual plotting
         t_all = GRF.time_stamps;
@@ -189,16 +205,15 @@ for s = 1:num_sessions
     [~, sort_order] = sort([all_events.time]);
     all_events = all_events(sort_order);
     
-    % --- DYNAMIC SAVE PATH ---
-    subject_folder = 'Sub-P2_3';
+    % DYNAMIC SAVE PATH
     save_dir = fullfile('C:\2026SSArbeit\data\PilotTest2', subject_folder, experiment_day, 'processed_EMG');
     
     if ~exist(save_dir, 'dir')
         mkdir(save_dir);
     end
     
-    save_name = fullfile(save_dir, sprintf('%s_gait_events.mat', current_session));
-    save(save_name, 'all_events');
+    save_name = fullfile(save_dir, sprintf('%s_run-%s_gait_events.mat', current_session, run_id));
+    save(save_name, 'all_events'); 
     fprintf('>> Saved %d combined events to: %s\n', length(all_events), save_name);
     
     % Wait for user to check your function's plots before closing and moving to next

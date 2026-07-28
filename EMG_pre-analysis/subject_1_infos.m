@@ -1,24 +1,24 @@
 % 1. Define data arrays of subject 1
 data_names = {
-    'Delays_S3_EMG'; 
-    'Delays_S4_EMG'; 
-    'Delays_S1_EMG'; 
-    'Delays_S5_EMG'; 
-    'Delays_S6_EMG'; 
-    'Delays_S0_EMG'; 
-    'Delays_S7_EMG'; 
-    'Delays_S8_EMG'; 
-    'Delays_S9_EMG'; 
-    'Delays_S10_EMG'; 
-    'Delays_S11_EMG'; 
-    'Delays_S12_EMG'; 
-    'Delays_S13_EMG'; 
-    'Delays_S14_EMG'; 
-    'Delays_S15_EMG'; 
-    'Delays_S2_EMG'; 
-    'Delays_S16_EMG'; 
-    'Delays_S17_EMG';
-    'Delays_S18_EMG'
+    'Delsys_S3_EMG'; 
+    'Delsys_S4_EMG'; 
+    'Delsys_S1_EMG'; 
+    'Delsys_S5_EMG'; 
+    'Delsys_S6_EMG'; 
+    'Delsys_S0_EMG'; 
+    'Delsys_S7_EMG'; 
+    'Delsys_S8_EMG'; 
+    'Delsys_S9_EMG'; 
+    'Delsys_S10_EMG'; 
+    'Delsys_S11_EMG'; 
+    'Delsys_S12_EMG'; 
+    'Delsys_S13_EMG'; 
+    'Delsys_S14_EMG'; 
+    'Delsys_S15_EMG'; 
+    'Delsys_S2_EMG'; 
+    'Delsys_S16_EMG'; 
+    'Delsys_S17_EMG';
+    'Delsys_S18_EMG'
 };
 
 muscle_name = {
@@ -55,4 +55,4 @@ subject_1 = table(sensor_ids, muscle_name, data_names, ...
     'VariableNames', {'SensorID', 'MuscleName', 'SignalName'});
 
 % Display the entire table in the command window
-% disp(subject_1);
+ disp(subject_1);

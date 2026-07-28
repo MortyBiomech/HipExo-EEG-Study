@@ -4,10 +4,23 @@ clear;
 
 %% 1. Load Configurations & Mapping Dictionary
 run('config_paths.m');
-run('subject_3_infos.m');
-% Extract mapping dictionary
-dict_data_names   = strtrim(subject_3.SignalName_2);
-dict_muscle_names = strtrim(subject_3.MuscleName);
+run([current_subject, '_infos.m']); 
+
+% Extract the numeric suffix from experiment_day
+day_num = strrep(experiment_day, 'day', '');
+target_signal_col = ['SignalName_', day_num];
+
+% Dynamically retrieve table variables
+current_subj_table = eval(current_subject); 
+
+if ismember(target_signal_col, current_subj_table.Properties.VariableNames)
+    dict_data_names = strtrim(current_subj_table.(target_signal_col));
+else
+    fprintf('>> Column "%s" not found in table. Falling back to default "SignalName" column.\n', target_signal_col);
+    dict_data_names = strtrim(current_subj_table.SignalName);
+end
+
+dict_muscle_names = strtrim(current_subj_table.MuscleName);
 
 %% 2. Dynamic Session Order Setup
 d = dir(data_path);
@@ -70,10 +83,13 @@ for s = 1:num_sessions
         continue;
     end
     
-    expected_filename = sprintf('sub-%s_%s_%s_task-Default_run-%s_eeg.xdf', ...
-                                subject_id, experiment_day, current_session, run_id);
-
-    full_file_path = fullfile(session_eeg_dir, expected_filename);
+    if ~strcmp(subject_id, 'Pilot2_2')
+        filename = ['sub-', subject_id, '_', experiment_day,'_',current_session, '_task-Default_run-', run_id,'_eeg.xdf'];
+        full_file_path = fullfile(data_path, current_session, 'eeg', filename);
+    else
+        filename = ['sub-', subject_id, '_', current_session, '_task-Default_run-', run_id,'_eeg.xdf'];
+        full_file_path = fullfile(data_path, current_session, 'eeg', filename);
+    end
     
     % Check if the specific concatenated file exists to prevent `load_xdf` from throwing an error due to a missing file
     if ~exist(full_file_path, 'file')
@@ -81,7 +97,7 @@ for s = 1:num_sessions
         continue;
     end
     
-    fprintf('>> Loading target XDF file: %s...\n', expected_filename);
+    fprintf('>> Loading target XDF file: %s...\n', filename);
     
     streams_raw = load_xdf(full_file_path);
     
@@ -175,14 +191,7 @@ for s = 1:num_sessions
     % Since all signals have been perfectly aligned to majority_time_stamps,
     % we can simply use this timeline as the sole reference for synchronizing all subsequent events (Markers, GRF)
     emg_time_stamps = majority_time_stamps;
-   
-    % CALCULATE TIME OFFSET BETWEEN GRF AND EMG CLOCKS  
-    time_offset_grf2emg = 0;
-    if ~isempty(grf_stream) && ~isempty(grf_stream.time_stamps)
-        time_offset_grf2emg = grf_stream.time_stamps(1) - emg_time_stamps(1);
-        fprintf('>> Clock sync: GRF is shifted by %.3f seconds relative to global EMG timeline.\n', time_offset_grf2emg);
-    end
-    
+
     % 3.4 Import Marker Events
     EEG.event = [];
     event_count = 0;
@@ -191,11 +200,9 @@ for s = 1:num_sessions
     if ~isempty(marker_stream) && isfield(marker_stream, 'time_stamps') && ~isempty(marker_stream.time_stamps)
         marker_names = marker_stream.time_series; 
         marker_times = marker_stream.time_stamps;
-        time_offset_marker2emg = marker_times(1) - emg_time_stamps(1);
         
         for i = 1:length(marker_times)
-            corrected_marker_time = marker_times(i) - time_offset_marker2emg;
-            [time_diff, closest_sample_idx] = min(abs(emg_time_stamps - corrected_marker_time));
+            [time_diff, closest_sample_idx] = min(abs(emg_time_stamps - marker_times(i)));
             
             if time_diff < 0.05 
                 event_count = event_count + 1;
@@ -216,7 +223,8 @@ for s = 1:num_sessions
     
     % 3.5.2 Insert calculated gait events (HS and TO)
     save_dir_gait = fullfile('C:\2026SSArbeit\data\PilotTest2', subject_folder, experiment_day, 'processed_EMG');
-    gait_events_file = fullfile(save_dir_gait, sprintf('%s_gait_events.mat', current_session));
+    gait_events_file = fullfile(save_dir_gait, sprintf('%s_run-%s_gait_events.mat', current_session, run_id));
+    fprintf('>> Inserted calculated gait events (HS and TO) from %s\n', gait_events_file);
     
     if exist(gait_events_file, 'file')
         gait_data = load(gait_events_file);
@@ -231,9 +239,7 @@ for s = 1:num_sessions
                     continue; 
                 end
                 
-                % Apply the correct offset correction
-                ev_time_corrected = calculated_events(i).time - time_offset_grf2emg;
-                [time_diff, closest_sample_idx] = min(abs(emg_time_stamps - ev_time_corrected));
+                [time_diff, closest_sample_idx] = min(abs(emg_time_stamps - calculated_events(i).time));
                 
                 if time_diff < 0.05 
                     event_count = event_count + 1;
@@ -270,7 +276,7 @@ for s = 1:num_sessions
     save_dir = fullfile(data_root, subject_folder, experiment_day, 'processed_EMG');
     if ~exist(save_dir, 'dir'), mkdir(save_dir); end
     
-    save_filename = sprintf('sub-%s_%s_%s_EMG_Envelope.set', subject_id, experiment_day, current_session);
+    save_filename = sprintf('sub-%s_%s_%s_run-%s_EMG_Envelope.set', subject_id, experiment_day, current_session,run_id);
     EEG = pop_saveset(EEG, 'filename', save_filename, 'filepath', save_dir);
     fprintf('>> Saved to: %s\n', save_filename);
 end
