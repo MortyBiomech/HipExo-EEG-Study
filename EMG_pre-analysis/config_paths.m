@@ -6,10 +6,10 @@ eeglab_path  = 'C:\egglab_task\eeglab2025.1.0\plugins\xdfimport1.2';
 data_root    = 'C:\2026SSArbeit\data\PilotTest2';
 
 % 2. Subject & Experiment Information
-current_subject = 'subject_2';
-subject_folder  = 'Sub-P2_2'; % Example:Sub-P2_1, Sub-P2_2, Sub-P2_3, etc. 
-subject_id      = 'Pilot2_2'; % Example:Pilot2_1, Pilot2_2, Pilot2_3, etc. 
-experiment_day  = 'day1'; % Enter day1, day2, etc., here
+current_subject = 'subject_3';
+subject_folder  = 'Sub-P2_3'; % Example:Sub-P2_1, Sub-P2_2, Sub-P2_3, etc. 
+subject_id      = 'Pilot2_3'; % Example:Pilot2_1, Pilot2_2, Pilot2_3, etc. 
+experiment_day  = 'day2'; % Enter day1, day2, etc., here
 run_id          = '001';  % Enter 001, 002, etc., here
 
 % 3.1 Verify whether the `experiment_day` folder exists

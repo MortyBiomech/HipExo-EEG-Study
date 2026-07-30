@@ -112,6 +112,26 @@ muscle_name = {
     'SCM L'; 
     % Face
     'Zygomaticus'
+
+     % 'Tib_ant_R',  # 对应 Tibialis anterior R
+        % 'Soleus_R',  # 对应 Soleus R
+        % 'Gast_med_R',  # 对应 Gastrocnemius cap. mediale R
+        % 'Vastus_med_R',  # 对应 Vastus medialis R
+        % 'Rect_fem_R',  # 对应 Rectus femoris R
+        % 'Biceps_fem_R',  # 对应 Biceps femoris R
+        % 'Glut_max_R',  # 对应 Glutaeus maximus R
+        % 'Tib_ant_L',  # 对应 Tibialis anterior L
+        % 'Soleus_L',  # 对应 Soleus L
+        % 'Gast_med_L',  # 对应 Gastrocnemius cap. mediale L
+        % 'Vastus_med_L',  # 对应 Vastus medialis L
+        % 'Rect_fem_L',  # 对应 Rectus femoris L
+        % 'Biceps_fem_L',  # 对应 Biceps femoris L
+        % 'Glut_max_L',  # 对应 Glutaeus maximus L
+        % 'Trapezius_R',  # 对应 Trapezius R (11字符)
+        % 'Trapezius_L',  # 对应 Trapezius L (11字符)
+        % 'SCM_R',  # 对应 SCM R
+        % 'SCM_L',  # 对应 SCM L
+        % 'Zygomaticus'  # 对应 Zygomaticus (11字符)
 };
 
 % Generate sensor IDs 1 to 19 as a numeric array
