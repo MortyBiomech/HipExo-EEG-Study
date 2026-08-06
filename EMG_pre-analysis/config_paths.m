@@ -4,11 +4,13 @@
 project_root = 'C:\2026SSArbeit\HipExo-EEG-Study';
 eeglab_path  = 'C:\egglab_task\eeglab2025.1.0\plugins\xdfimport1.2';
 data_root    = 'C:\2026SSArbeit\data\PilotTest2';
+bids_root    = 'C:\2026SSArbeit\data\HipExo-EEG-Study_BIDS'; 
 
 % 2. Subject & Experiment Information
 current_subject = 'subject_3';
 subject_folder  = 'Sub-P2_3'; % Example:Sub-P2_1, Sub-P2_2, Sub-P2_3, etc. 
-subject_id      = 'Pilot2_3'; % Example:Pilot2_1, Pilot2_2, Pilot2_3, etc. 
+subject_id      = 'Pilot2_3'; % Example:Pilot2_1, Pilot2_2, Pilot2_3, etc.
+bids_subject_id = strrep(subject_id, '_', ''); % Dynamically remove underscores from subject_id to generate a BIDS-compliant ID
 experiment_day  = 'day2'; % Enter day1, day2, etc., here
 run_id          = '001';  % Enter 001, 002, etc., here
 
