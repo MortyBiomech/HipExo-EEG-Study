@@ -157,6 +157,23 @@ for s_idx, current_session in enumerate(order_sessions):
     majority_time_stamps = ref_stream['time_stamps']
     majority_points = mode_len
 
+    t_ref = np.asarray(majority_time_stamps, dtype=float)
+
+    sfreq_ref = float(ref_stream['info']['nominal_srate'][0])
+    sfreq_effective = (len(t_ref) - 1) / (t_ref[-1] - t_ref[0])
+
+    # MNE 假定的时间轴
+    t_assumed = t_ref[0] + np.arange(len(t_ref)) / sfreq_ref
+
+    clock_error_ms = 1000 * (t_assumed - t_ref)
+
+    print("\n========== EMG time-axis audit ==========")
+    print(f"Nominal sampling rate : {sfreq_ref:.6f} Hz")
+    print(f"Effective sampling rate: {sfreq_effective:.6f} Hz")
+    print(f"Start error           : {clock_error_ms[0]:.3f} ms")
+    print(f"End error             : {clock_error_ms[-1]:.3f} ms")
+    print(f"Maximum absolute error: {np.max(np.abs(clock_error_ms)):.3f} ms")
+
     expected_labels, expected_stream_names = [], []
     for _, row in subj_table.iterrows():
         sig_name = row['SignalName'].strip()

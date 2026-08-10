@@ -142,4 +142,4 @@ subject_3 = table(sensor_ids, muscle_name, data_names_day1, uid_day1, data_names
     'VariableNames', {'SensorID', 'MuscleName', 'SignalName_1', 'UID_1', 'SignalName_2', 'UID_2'});
 
 % Display the entire table in the command window
- disp(subject_3);
+% disp(subject_3);

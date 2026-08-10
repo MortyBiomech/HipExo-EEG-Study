@@ -170,16 +170,16 @@ for s = 1:num_sessions
     % 5.3 Call the gait histogram function.
     plot_gait_histograms(HS_R, TO_R, HS_L, TO_L);
     
-    % --- Optional: Remove the first and last points to ensure a clean steady state ---
-    % Note: Function returns a struct containing .samples and .timestamps
-    if length(HS_L.timestamps) > 3
-        HS_L.timestamps = HS_L.timestamps(2:end-1);
-        TO_L.timestamps = TO_L.timestamps(2:end-1);
-    end
-    if length(HS_R.timestamps) > 3
-        HS_R.timestamps = HS_R.timestamps(2:end-1);
-        TO_R.timestamps = TO_R.timestamps(2:end-1);
-    end
+    % % --- Optional: Remove the first and last points to ensure a clean steady state ---
+    % % Note: Function returns a struct containing .samples and .timestamps
+    % if length(HS_L.timestamps) > 3
+    %     HS_L.timestamps = HS_L.timestamps(2:end-1);
+    %     TO_L.timestamps = TO_L.timestamps(2:end-1);
+    % end
+    % if length(HS_R.timestamps) > 3
+    %     HS_R.timestamps = HS_R.timestamps(2:end-1);
+    %     TO_R.timestamps = TO_R.timestamps(2:end-1);
+    % end
     
     %% 6. Compile Events and Save into .mat
     % Package the output of function into the struct format we standardly use for EMG and EEG data.
