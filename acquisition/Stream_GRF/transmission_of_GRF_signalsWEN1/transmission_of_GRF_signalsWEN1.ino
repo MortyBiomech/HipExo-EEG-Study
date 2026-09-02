@@ -1,14 +1,19 @@
-#include <EasyCAT.h>
-
-#include <EasyCAT.h>
-
 #include <SPI.h>
 #include "EasyCAT.h"  // Include the EasyCAT library
 
 #define CONVST 6
 #define Slave_S 8
 
+// Sampling period in microseconds. 6667 us -> 149.99 Hz, effectively the
+// intended 150 Hz. The loop is paced with micros() instead of delay(5), so
+// the rate no longer depends on code-path overhead (the old delay(5) loop
+// actually ran at ~153.3 Hz = 5 ms + ~1.5 ms of ADC/serial time).
+#define PERIOD_US 6667UL
+
 EasyCAT EASYCAT(9);  // Create an EasyCAT object, specifying pin 9
+
+uint32_t sample_n = 0;        // sample counter, first field of every line
+uint32_t next_t   = 0;        // next scheduled sample time, micros()
 
 void setup() {
   Serial.begin(1000000);  // Initialize serial communication at 1000000 baud
@@ -41,6 +46,7 @@ void setup() {
   }
 
   Serial.println("Setup complete. Starting to read data...");
+  next_t = micros() + PERIOD_US;
 }
 
 uint16_t readChannel(byte channel) {
@@ -73,17 +79,24 @@ void readAndPrintChannels() {
     channels[i] = readChannel(i);
   }
 
-  // Sending the results over serial
+  // Line format: ch1, ..., ch8, counter  (9 comma-separated fields).
+  // The counter is the LAST field, so the force channels keep their
+  // familiar 1..8 positions (same indices as the old 8-channel format).
+  // The counter is the device-side timebase: downstream rebuilds the time
+  // axis from it exactly like the IMU packet counter, so LSL timestamp
+  // quality only affects the anchoring regression, never the rate.
   for (byte i = 0; i < 8; i++) {
     Serial.print(channels[i]);
-    if (i < 7) {
-      Serial.print(", ");
-    }
+    Serial.print(", ");
   }
+  Serial.print(sample_n++);
   Serial.println();
 }
 
 void loop() {
-  readAndPrintChannels();  // Read and print all channels
-  delay(5);  // Short delay to ensure data is read frequently
+  // Constant-rate pacing: wait until the scheduled instant, then sample.
+  // Overflow-safe comparison (micros() wraps every ~71 minutes).
+  while ((int32_t)(micros() - next_t) < 0) { /* wait */ }
+  next_t += PERIOD_US;
+  readAndPrintChannels();
 }

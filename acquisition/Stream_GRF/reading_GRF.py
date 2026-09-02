@@ -3,7 +3,7 @@ import time
 from pylsl import StreamInfo, StreamOutlet
 
 #read_from_arduino(serial_port='/dev/ttyACM0', baud_rate=1000000, timeout=1):
-def read_from_arduino(serial_port='COM6', baud_rate=1000000, timeout=1):
+def read_from_arduino(serial_port='COM11', baud_rate=1000000, timeout=1):
     """
     Reads data from the Arduino via the specified serial port.
     
@@ -44,7 +44,7 @@ def parse_data(line):
 
 def main():
     # serial_port = '/dev/ttyACM0'
-    serial_port = 'COM6'
+    serial_port = 'COM11'
     baud_rate = 1000000
     chunk_size = 50  # Number of samples to collect before sending as a chunk
 

@@ -1,6 +1,5 @@
 import serial
 import time
-import tkinter as tk
 import tkinter.ttk as ttk
 from pylsl import StreamInfo, StreamOutlet, local_clock
 
@@ -21,7 +20,9 @@ def read_from_arduino(serial_port='COM11', baud_rate=1_000_000, timeout=1):
     try:
         ser = serial.Serial(serial_port, baud_rate, timeout=timeout)
         print(f"Connected to Arduino on port {serial_port}")
-        time.sleep(2)
+        time.sleep(2)                # let the Arduino finish its reset
+        ser.reset_input_buffer()     # discard stale bytes from before/during reset
+        ser.readline()               # throw away the (possibly partial) first line
         return ser
     except serial.SerialException as e:
         print(f"Error: {e}")
@@ -29,14 +30,15 @@ def read_from_arduino(serial_port='COM11', baud_rate=1_000_000, timeout=1):
 
 
 def parse_data(line):
-    channels = [0] * 8
+    """Return a list of 8 ints, or None if the line is corrupted/incomplete."""
     try:
         parts = line.split(", ")
         if len(parts) == 8:
-            channels = [int(part) for part in parts]
-    except (ValueError, IndexError) as e:
-        print(f"Parsing error: {e}")
-    return channels
+            return [int(part) for part in parts]
+    except ValueError:
+        pass
+    print(f"Skipped bad line: {line!r}")
+    return None
 
 
 def main():
@@ -55,17 +57,17 @@ def main():
     mrk_outlet = StreamOutlet(mrk_info)
 
     # --- GUI ----------------------------------------------------------------
-    root = tk.Tk()
+    root = ttk.Tk()
     root.title("GRF Marker Control")
     root.geometry("460x400")
 
     # --- Condition selector -------------------------------------------------
-    condition_var = tk.StringVar(value=CONDITIONS[0])
+    condition_var = ttk.StringVar(value=CONDITIONS[0])
 
-    selector_frame = tk.Frame(root)
+    selector_frame = ttk.Frame(root)
     selector_frame.pack(pady=8)
 
-    tk.Label(selector_frame, text="Condition:", font=('Arial', 12, 'bold')).pack(side=tk.LEFT, padx=(0, 8))
+    ttk.Label(selector_frame, text="Condition:", font=('Arial', 12, 'bold')).pack(side=tk.LEFT, padx=(0, 8))
 
     condition_menu = ttk.Combobox(
         selector_frame,
@@ -75,7 +77,7 @@ def main():
         font=('Arial', 12),
         width=16,
     )
-    condition_menu.pack(side=tk.LEFT)
+    condition_menu.pack(side=ttk.LEFT)
 
     def on_condition_change(*_):
         root.title(f"GRF Marker Control — {condition_var.get()}")
@@ -177,13 +179,14 @@ def main():
         if line:
             t        = local_clock()
             channels = parse_data(line)
-            chunk.append(channels)
-            timestamps.append(t)
+            if channels is not None:
+                chunk.append(channels)
+                timestamps.append(t)
 
-            if len(chunk) >= chunk_size:
-                grf_outlet.push_chunk(chunk, timestamps)
-                chunk.clear()
-                timestamps.clear()
+                if len(chunk) >= chunk_size:
+                    grf_outlet.push_chunk(chunk, timestamps)
+                    chunk.clear()
+                    timestamps.clear()
 
         root.after(1, acquire)
 
