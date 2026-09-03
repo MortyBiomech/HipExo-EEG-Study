@@ -12,9 +12,9 @@ from mne_bids import BIDSPath, write_raw_bids
 # ==========================================
 # 0. Configuration
 # ==========================================
-CURRENT_SUBJECT = "subject_3"
-SUBJECT_FOLDER = "Sub-P2_3"
-SUBJECT_ID = "Pilot2_3"
+CURRENT_SUBJECT = "subject_1"
+SUBJECT_FOLDER = "Sub-P2_1"
+SUBJECT_ID = "Pilot2_1"
 EXPERIMENT_DAY = "day2"
 RUN_ID = "001"
 

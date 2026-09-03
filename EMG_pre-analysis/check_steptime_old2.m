@@ -38,7 +38,7 @@ for s = 1:num_sessions
     current_session = order_sessions{s};
     valid_conditions{s} = current_session; 
     
-    % Skip missing sessions[cite: 2]
+    % Skip missing sessions[cite: 2]  
     if contains(current_session, 'Missing')
         fprintf('Skipping missing session: %s\n', current_session);
         continue;

@@ -27,7 +27,7 @@ for s = 1:num_sessions
     % Construct the BIDS-compliant emg folder path
     session_emg_dir = fullfile(subj_dir, current_session_folder, 'emg');
     search_pattern = sprintf('*run-%s*_emg.bdf', run_id);
-    bdf_files = dir(fullfile(session_emg_dir, '*.bdf'));
+    bdf_files = dir(fullfile(session_emg_dir, search_pattern));
     
     if isempty(bdf_files)
         warning('No BDF file found for run-%s in %s. Skipping.', run_id, session_emg_dir);
