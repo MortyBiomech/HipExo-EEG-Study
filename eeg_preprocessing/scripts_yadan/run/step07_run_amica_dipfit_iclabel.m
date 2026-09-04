@@ -1,34 +1,27 @@
-% Current workflow:
-%   1) check_eeg_streams.m
-%   2) import_table.m
-%   3) bemobil_import.m
-%   4) bemobil_process_all_EEG_data.m
-%   5) check_preprocessed_EEG.m
-%   6) this AMICA-only script
+% GOAL
+%   Run AMICA source decomposition followed by DIPFIT source localization
+%   and ICLabel classification for EEG datasets that passed Step 06 QC.
 %
-% This script:
-% 1. Reads bemobil_import_table.csv.
-% 2. Selects rows using DoAMICA.
-% 3. Loads the existing preprocessed .set file from PreprocessedSetPath.
-% 4. Runs AMICA only.
-% 5. Updates bemobil_import_table.csv with AMICA status and output path.
+% INPUT
+%   Updated subject_level_EEG_processing_table.csv from Step 06.
+%   Verified preprocessed .set/.fdt datasets produced by Step 05.
 %
-% Important:
-% This script does NOT rerun basic preprocessing.
-% This script should only run AMICA for files that passed preprocessing QC.
+% APPROACH
+%   1. Select rows enabled by DoAMICA after preprocessing QC.
+%   2. Verify FieldTrip/DIPFIT resources before starting the expensive run.
+%   3. Reuse only complete AMICA outputs with matching provenance.
+%   4. Otherwise run the established BeMoBIL AMICA/DIPFIT/ICLabel pipeline.
+%   5. Verify all expected output datasets and update processing status.
 %
-% Table-driven control:
-%   DoAMICA = 1  -> run AMICA for this row
-%   DoAMICA = 0  -> skip this row
+% OUTPUT
+%   AMICA.set
+%   dipfitted.set
+%   preprocessed_and_ICA.set
+%   cleaned_with_ICA.set
+%   Updated subject_level_EEG_processing_table.csv
 %
-% Default behavior:
-%   If DoAMICA does not exist, it is created from:
-%       PreprocessingStatus == "completed"
-%       AND
-%       PreprocessingQCStatus == "passed_basic_checks"
-%
-%   If DoAMICA already exists, this script uses the existing table values.
-
+% USED BY
+%   Step 08 AMICA / ICA / ICLabel / DIPFIT quality control.
 
 clear; clc; close all;
 
@@ -37,21 +30,31 @@ set(0, 'DefaultFigureVisible', 'off');
 set(groot, 'DefaultFigureVisible', 'off');
 
 %% ========================================================================
-%  LOAD CENTRAL PATHS
+%  LOAD PATHS, CONFIGURATION, AND RUN CONTROL
 %  ========================================================================
 
-run(fullfile(fileparts(mfilename('fullpath')), 'paths.m'));
+runFolder = fileparts(mfilename('fullpath'));
+scriptsRoot = fileparts(runFolder);
+
+addpath(scriptsRoot, '-begin');
+addpath(fullfile(scriptsRoot, 'config'), '-begin');
+
+P = project_paths();
+
+bemobil_config = ...
+    config_step05_09_eeg_preprocessing_ica(P);
+
+mappingFile = P.subjectLevelEEGTableFile;
+outputFolder = P.outputFolder;
+amicaTempFolder = P.amicaTempFolder;
+fieldtripFolder = P.fieldtripFolder;
 
 if ~exist(mappingFile, 'file')
-    error('Import table not found:\n%s\nPlease run import_table.m, bemobil_import.m, preprocessing, and QC first.', mappingFile);
+    error([ ...
+        'Subject-level processing table not found:\n%s\n' ...
+        'Run step06_check_preprocessed_eeg.m first.'], ...
+        mappingFile);
 end
-
-%% ========================================================================
-%  AMICA SAFE CURRENT FOLDER
-%  ========================================================================
-
-% Force MATLAB current folder to a simple local path.
-% This avoids AMICA problems with OneDrive paths, spaces, or non-ASCII characters.
 
 if ~exist(amicaTempFolder, 'dir')
     mkdir(amicaTempFolder);
@@ -59,35 +62,17 @@ end
 
 cd(amicaTempFolder);
 
-fprintf('Current MATLAB folder for AMICA temp files:\n%s\n', pwd);
+reset_DoAMICA_from_PreprocessingQC = ...
+    bemobil_config.pipeline.reset_DoAMICA_from_PreprocessingQC;
 
-%% ========================================================================
-%  AMICA SETTINGS
-%  ========================================================================
+force_recompute_amica = ...
+    bemobil_config.pipeline.force_recompute_amica;
 
-% If true:
-%   DoAMICA will be overwritten from:
-%       PreprocessingStatus == "completed"
-%       AND
-%       PreprocessingQCStatus == "passed_basic_checks"
-%
-% If false:
-%   Existing DoAMICA values in the CSV are used.
-%
-% Recommended:
-%   false, because AMICA selection should be controlled manually by the table.
-reset_DoAMICA_from_PreprocessingQC = false;
+skip_existing_complete_outputs = ...
+    bemobil_config.pipeline.skip_existing_complete_amica_outputs;
 
-% Set to 1 if you want to recompute AMICA even if output already exists.
-% For the first technical run, 1 is fine.
-% After confirming the pipeline, use 0 to avoid recomputing completed AMICA results.
-force_recompute_amica = 0;
-
-% If true and all expected AMICA/DIPFIT/output5 files already exist,
-% this script will only update bemobil_import_table.csv and skip rerunning AMICA.
-% This is useful after AMICA was already run with an older wrapper that did not
-% write DipfittedSetPath / PreprocessedICASetPath / CleanedICASetPath.
-skip_existing_complete_outputs = true;
+expectedChannelsBeforeAMICA = ...
+    bemobil_config.pipeline.expectedChannelsBeforeAMICA;
 
 %% ========================================================================
 %  INITIALIZE EEGLAB
@@ -97,34 +82,227 @@ if ~exist('ALLCOM', 'var')
     [ALLEEG, EEG, CURRENTSET, ALLCOM] = eeglab('nogui');
 end
 
-hide_all_figures();
+hipexo.hide_all_figures();
 
 %% ========================================================================
-%  LOAD BEMOBIL CONFIGURATION
+%  PREPARE FIELDTRIP AND DIPFIT RESOURCES
 %  ========================================================================
 
-run(fullfile(fileparts(mfilename('fullpath')), 'bemobil_config_.m'));
+% The XDF inspection stage uses the complete FieldTrip installation, while
+% EEGLAB can additionally place Fieldtrip-lite on the MATLAB path. Keeping
+% both versions active can make DIPFIT resolve functions and template files
+% from different installations.
+%
+% For this AMICA/DIPFIT stage, use the complete FieldTrip installation
+% configured in project_paths.m and remove only Fieldtrip-lite path entries from the
+% current MATLAB session. This does not modify the saved MATLAB path and does
+% not affect the XDF files or any previously generated EEG data.
 
-hide_all_figures();
+if ~exist('fieldtripFolder', 'var')
+
+    error([ ...
+        'fieldtripFolder was not defined by project_paths.m.\n' ...
+        'Define the complete FieldTrip installation in project_paths.m before ' ...
+        'running AMICA.']);
+
+end
+
+if strlength(strtrim(string(fieldtripFolder))) == 0 || ...
+        ~isfolder(fieldtripFolder)
+
+    error([ ...
+        'Configured FieldTrip folder does not exist:\n%s\n' ...
+        'Correct fieldtripFolder in project_paths.m before running AMICA.'], ...
+        char(string(fieldtripFolder)));
+
+end
+
+currentPathEntries = strsplit(path, pathsep);
+removedFieldtripLitePaths = 0;
+
+for pathIndex = numel(currentPathEntries):-1:1
+
+    thisPathEntry = strtrim(currentPathEntries{pathIndex});
+
+    if ~isempty(thisPathEntry) && ...
+            contains(lower(thisPathEntry), 'fieldtrip-lite')
+
+        rmpath(thisPathEntry);
+        removedFieldtripLitePaths = removedFieldtripLitePaths + 1;
+
+    end
+
+end
+
+% Clear the main FieldTrip entry points so MATLAB resolves them again after
+% the path cleanup.
+clear ft_defaults ft_version ft_read_headmodel ft_dipolefitting
+rehash toolboxcache;
+
+% Explicitly select and initialize the configured complete FieldTrip.
+addpath(fieldtripFolder, '-begin');
+ft_defaults;
+
+activeFieldTripFile = which('ft_defaults.m');
+
+if isempty(activeFieldTripFile) || ...
+        ~startsWith( ...
+            lower(string(activeFieldTripFile)), ...
+            lower(string(fieldtripFolder)))
+
+    error([ ...
+        'Could not activate the configured FieldTrip installation.\n' ...
+        'Configured folder:\n%s\n' ...
+        'Active ft_defaults.m:\n%s'], ...
+        char(string(fieldtripFolder)), ...
+        char(string(activeFieldTripFile)));
+
+end
+
+% DIPFIT sometimes stores the standard template resources by filename only
+% (for example, "standard_vol.mat"). Therefore, explicitly add all required
+% DIPFIT resource folders on every run instead of relying on a previous
+% MATLAB session to have configured them.
+
+dipfitDefsFile = which('dipfitdefs.m');
+
+if isempty(dipfitDefsFile)
+
+    error([ ...
+        'DIPFIT is not available on the MATLAB path.\n' ...
+        'Install or enable the EEGLAB DIPFIT plugin before running AMICA.']);
+
+end
+
+dipfitRoot = fileparts(dipfitDefsFile);
+
+dipfitResourceFolders = { ...
+    fullfile(dipfitRoot, 'standard_BEM'), ...
+    fullfile(dipfitRoot, 'standard_BEM', 'elec'), ...
+    fullfile(dipfitRoot, 'standard_BEM', 'skin'), ...
+    fullfile(dipfitRoot, 'standard_BESA') ...
+};
+
+for folderIndex = 1:numel(dipfitResourceFolders)
+
+    if ~isfolder(dipfitResourceFolders{folderIndex})
+
+        error([ ...
+            'Required DIPFIT resource folder does not exist:\n%s\n' ...
+            'Repair the DIPFIT plugin installation before running AMICA.'], ...
+            dipfitResourceFolders{folderIndex});
+
+    end
+
+    addpath(dipfitResourceFolders{folderIndex}, '-begin');
+
+end
+
+dipfitHeadModelFile = fullfile( ...
+    dipfitRoot, ...
+    'standard_BEM', ...
+    'standard_vol.mat');
+
+dipfitMRIFile = fullfile( ...
+    dipfitRoot, ...
+    'standard_BEM', ...
+    'standard_mri.mat');
+
+dipfitChannelFile = fullfile( ...
+    dipfitRoot, ...
+    'standard_BEM', ...
+    'elec', ...
+    'standard_1005.elc');
+
+requiredDipfitFiles = { ...
+    dipfitHeadModelFile, ...
+    dipfitMRIFile, ...
+    dipfitChannelFile ...
+};
+
+for fileIndex = 1:numel(requiredDipfitFiles)
+
+    if ~isfile(requiredDipfitFiles{fileIndex})
+
+        error([ ...
+            'Required DIPFIT model file does not exist:\n%s\n' ...
+            'Repair the DIPFIT plugin installation before running AMICA.'], ...
+            requiredDipfitFiles{fileIndex});
+
+    end
+
+end
+
+resolvedDipfitHeadModel = which('standard_vol.mat');
+
+if isempty(resolvedDipfitHeadModel)
+
+    error([ ...
+        'DIPFIT standard_vol.mat exists on disk but cannot be resolved ' ...
+        'from the MATLAB path.']);
+
+end
+
+% Read the model before AMICA starts. If DIPFIT cannot use the configured
+% model, stop now rather than after a long AMICA computation.
+try
+
+    dipfitHeadModelTest = ...
+        ft_read_headmodel('standard_vol.mat');
+
+catch ME
+
+    error([ ...
+        'DIPFIT head-model preflight failed before AMICA started.\n' ...
+        'Resolved model:\n%s\n' ...
+        'Original error:\n%s'], ...
+        resolvedDipfitHeadModel, ...
+        ME.message);
+
+end
+
+if ~isstruct(dipfitHeadModelTest)
+
+    error([ ...
+        'DIPFIT head-model preflight returned an unexpected result for:\n%s'], ...
+        resolvedDipfitHeadModel);
+
+end
+
+clear dipfitHeadModelTest
+
+fprintf('\nDIPFIT / FieldTrip preflight passed.\n');
+fprintf('Removed Fieldtrip-lite path entries: %d\n', ...
+    removedFieldtripLitePaths);
+fprintf('Active FieldTrip:\n%s\n', activeFieldTripFile);
+fprintf('DIPFIT root:\n%s\n', dipfitRoot);
+fprintf('Resolved head model:\n%s\n', resolvedDipfitHeadModel);
 
 %% ========================================================================
-%  AMICA PARAMETERS
+%  FINALIZE AMICA CONFIGURATION
 %  ========================================================================
 
-% Final analysis can stay at 2000.
-% For a quick technical test only, you may temporarily reduce this to 100.
-bemobil_config.AMICA_max_iter = 2000;
+if isempty(bemobil_config.resample_freq)
+    expectedPreprocessedSrate = 500;
+else
+    expectedPreprocessedSrate = ...
+        double(bemobil_config.resample_freq);
+end
 
-% Keep 4 threads unless your PC crashes or becomes unstable.
-bemobil_config.max_threads = 4;
-amicaConfigSignature = struct_signature(bemobil_config);
+amicaConfigSignature = ...
+    hipexo.amica_scientific_signature(bemobil_config);
 
 fprintf('\nAMICA settings:\n');
-fprintf('AMICA_max_iter: %d\n', bemobil_config.AMICA_max_iter);
-fprintf('max_threads: %d\n', bemobil_config.max_threads);
-fprintf('force_recompute_amica: %d\n', force_recompute_amica);
-fprintf('skip_existing_complete_outputs: %d\n', skip_existing_complete_outputs);
-fprintf('reset_DoAMICA_from_PreprocessingQC: %d\n', reset_DoAMICA_from_PreprocessingQC);
+fprintf('AMICA_max_iter: %d\n', ...
+    bemobil_config.AMICA_max_iter);
+fprintf('max_threads: %d\n', ...
+    bemobil_config.max_threads);
+fprintf('force_recompute_amica: %d\n', ...
+    force_recompute_amica);
+fprintf('skip_existing_complete_outputs: %d\n', ...
+    skip_existing_complete_outputs);
+fprintf('reset_DoAMICA_from_PreprocessingQC: %d\n', ...
+    reset_DoAMICA_from_PreprocessingQC);
 
 %% ========================================================================
 %  READ IMPORT TABLE
@@ -158,7 +336,7 @@ requiredColumns = { ...
 for c = 1:length(requiredColumns)
     if ~ismember(requiredColumns{c}, sourceMap.Properties.VariableNames)
         error(['Import table is missing required column: %s\n' ...
-               'Please run preprocessing and check_preprocessed_EEG.m first.'], ...
+               'Please run preprocessing and step06_check_preprocessed_eeg.m first.'], ...
                requiredColumns{c});
     end
 end
@@ -329,7 +507,7 @@ sourceMap = ensure_numeric_column(sourceMap, 'DoAMICA');
 candidateRows = find(sourceMap.DoAMICA == 1);
 
 if isempty(candidateRows)
-    error('No rows with DoAMICA = 1 found in bemobil_import_table.csv.');
+    error('No rows with DoAMICA = 1 found in the subject-level processing table.');
 end
 
 hasPreprocessedPath = strlength(strtrim(sourceMap.PreprocessedSetPath)) > 0;
@@ -381,7 +559,7 @@ disp(sourceMap(rowsToProcess, {'FileName', 'BidsSubject', 'BidsSession', ...
                                'PreprocessingQCStatus', ...
                                'PreprocessedSetPath'}));
 
-hide_all_figures();
+hipexo.hide_all_figures();
 
 %% ========================================================================
 %  AMICA LOOP
@@ -389,10 +567,10 @@ hide_all_figures();
 
 for r = 1:length(rowsToProcess)
 
-    hide_all_figures();
+    hipexo.hide_all_figures();
 
     rowIdx = rowsToProcess(r);
-    sessionRows = session_peer_rows(sourceMap, rowIdx);
+    sessionRows = hipexo.session_peer_rows(sourceMap, rowIdx);
 
     bidsSubject = sourceMap.BidsSubject(rowIdx);
     bidsSession = char(sourceMap.BidsSession(rowIdx));
@@ -525,7 +703,7 @@ for r = 1:length(rowsToProcess)
 
     sourceMap.PreprocessedSetPath(sessionRows) = string(preprocessedSetPath);
 
-    expectedAMICAInputSignature = file_signature(preprocessedSetPath) + ...
+    expectedAMICAInputSignature = hipexo.eeglab_dataset_signature(preprocessedSetPath) + ...
         "|cfg=" + amicaConfigSignature;
     sessionMarkedStale = any(sourceMap.AMICAStatus(sessionRows) == "stale_needs_rerun");
 
@@ -627,7 +805,7 @@ for r = 1:length(rowsToProcess)
     EEG = [];
     EEG_preprocessed = [];
 
-    hide_all_figures();
+    hipexo.hide_all_figures();
 
     %% --------------------------------------------------------------------
     %  LOAD EXISTING PREPROCESSED EEG
@@ -644,7 +822,7 @@ for r = 1:length(rowsToProcess)
 
         EEG_preprocessed = eeg_checkset(EEG_preprocessed);
 
-        hide_all_figures();
+        hipexo.hide_all_figures();
 
     catch ME
 
@@ -673,6 +851,8 @@ for r = 1:length(rowsToProcess)
     EEG_preprocessed.etc.preprocessing_qc_status_for_amica = char(sourceMap.PreprocessingQCStatus(rowIdx));
     EEG_preprocessed.etc.amica_input_signature = char(expectedAMICAInputSignature);
     EEG_preprocessed.etc.amica_config_signature = char(amicaConfigSignature);
+    EEG_preprocessed.etc.amica_config_signature_version = ...
+        'HipExo_amica_scientific_config_v1';
 
     if ismember('EEGStreamName', sourceMap.Properties.VariableNames)
         EEG_preprocessed.etc.source_eeg_stream_name = char(sourceMap.EEGStreamName(rowIdx));
@@ -691,14 +871,15 @@ for r = 1:length(rowsToProcess)
     %  BASIC SAFETY CHECK BEFORE AMICA
     %  --------------------------------------------------------------------
 
-    if EEG_preprocessed.nbchan ~= 64
+    if EEG_preprocessed.nbchan ~= expectedChannelsBeforeAMICA
 
-        warning('Unexpected channel count before AMICA. Expected 64, got %d. Skipping.', EEG_preprocessed.nbchan);
+        warning('Unexpected channel count before AMICA. Expected %d, got %d. Skipping.', ...
+            expectedChannelsBeforeAMICA, EEG_preprocessed.nbchan);
 
         sourceMap = update_amica_status( ...
             sourceMap, rowIdx, ...
             "failed_unexpected_channel_count", ...
-            "Expected 64 channels before AMICA.", ...
+            "Expected " + string(expectedChannelsBeforeAMICA) + " channels before AMICA.", ...
             "" ...
         );
 
@@ -707,14 +888,21 @@ for r = 1:length(rowsToProcess)
 
     end
 
-    if abs(EEG_preprocessed.srate - 250) > 0.001
+    if abs( ...
+            EEG_preprocessed.srate - ...
+            expectedPreprocessedSrate) > 0.001
 
-        warning('Unexpected sampling rate before AMICA. Expected 250 Hz, got %.2f Hz. Skipping.', EEG_preprocessed.srate);
+        warning([ ...
+            'Unexpected sampling rate before AMICA. Expected %.2f Hz, ' ...
+            'got %.2f Hz. Skipping.'], ...
+            expectedPreprocessedSrate, ...
+            EEG_preprocessed.srate);
 
         sourceMap = update_amica_status( ...
             sourceMap, rowIdx, ...
             "failed_unexpected_sampling_rate", ...
-            "Expected 250 Hz sampling rate before AMICA.", ...
+            "Expected " + string(expectedPreprocessedSrate) + ...
+                " Hz sampling rate before AMICA.", ...
             "" ...
         );
 
@@ -748,7 +936,7 @@ for r = 1:length(rowsToProcess)
 
     try
 
-        hide_all_figures();
+        hipexo.hide_all_figures();
 
         bemobil_process_all_AMICA( ...
             ALLEEG, ...
@@ -758,11 +946,16 @@ for r = 1:length(rowsToProcess)
             bemobil_config, ...
             rowForceRecomputeAMICA);
 
-        hide_all_figures();
+        hipexo.hide_all_figures();
 
     catch ME
 
-        hide_all_figures();
+        hipexo.hide_all_figures();
+
+        fprintf(2, ...
+            '\nAMICA / DIPFIT / ICLabel processing failed for %s.\n%s\n', ...
+            processingSubjectLabel, ...
+            getReport(ME, 'extended', 'hyperlinks', 'off'));
 
         sourceMap = update_amica_status( ...
             sourceMap, rowIdx, ...
@@ -851,32 +1044,20 @@ for r = 1:length(rowsToProcess)
 
     writetable(sourceMap, mappingFile);
 
-    hide_all_figures();
+    hipexo.hide_all_figures();
 
-    fprintf('\n============================================================\n');
-    fprintf('AMICA FINISHED FOR THIS FILE\n');
-    fprintf('============================================================\n');
-    fprintf('Import table updated:\n%s\n', mappingFile);
 
 end
 
-hide_all_figures();
+hipexo.hide_all_figures();
 
 %% ========================================================================
 %  FINAL REPORT
 %  ========================================================================
 
-fprintf('\n\n============================================================\n');
-fprintf('ALL SELECTED AMICA RUNS FINISHED\n');
-fprintf('============================================================\n');
-fprintf('Import table:\n%s\n', mappingFile);
+fprintf('\nAMICA/DIPFIT/ICLabel processing finished.\n');
 
-optsFinal = detectImportOptions(mappingFile, ...
-    'FileType', 'text', ...
-    'Delimiter', ',', ...
-    'VariableNamingRule', 'preserve');
-
-sourceMapFinal = readtable(mappingFile, optsFinal);
+sourceMapFinal = sourceMap;
 
 if ismember('AMICAStatus', sourceMapFinal.Properties.VariableNames)
 
@@ -902,39 +1083,12 @@ if ismember('AMICAStatus', sourceMapFinal.Properties.VariableNames)
 
 end
 
-fprintf('\nDone.\n');
-
-hide_all_figures();
+hipexo.hide_all_figures();
 
 %% ========================================================================
 %  HELPER FUNCTIONS
 %  ========================================================================
 
-function hide_all_figures()
-
-    try
-        set(0, 'DefaultFigureVisible', 'off');
-        set(groot, 'DefaultFigureVisible', 'off');
-        set(0, 'ShowHiddenHandles', 'on');
-    catch
-    end
-
-    try
-        figs = findall(groot, 'Type', 'figure');
-
-        if ~isempty(figs)
-            set(figs, 'Visible', 'off');
-            close(figs);
-        end
-
-    catch
-        try
-            close all force;
-        catch
-        end
-    end
-
-end
 
 function label = make_bids_label(x)
 
@@ -1132,7 +1286,7 @@ function T = update_amica_status(T, rowIdx, statusValue, notesValue, setPathValu
     T = ensure_string_column(T, 'CleanedICASetPath');
     T = ensure_string_column(T, 'AMICAOutputStatus');
 
-    rows = session_peer_rows(T, rowIdx);
+    rows = hipexo.session_peer_rows(T, rowIdx);
     T.AMICAStatus(rows) = string(statusValue);
     T.AMICANotes(rows) = string(notesValue);
     T.AMICADate(rows) = string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
@@ -1172,83 +1326,8 @@ function [rankValue, valid] = get_rank_metadata(EEG)
 
 end
 
-function rows = session_peer_rows(T, rowIdx)
 
-    rows = rowIdx;
-    required = {'BidsSubject', 'BidsSession'};
-    if ~all(ismember(required, T.Properties.VariableNames))
-        return;
-    end
 
-    subjectValues = T.BidsSubject;
-    if ~isnumeric(subjectValues)
-        subjectValues = str2double(string(subjectValues));
-    end
-    sessionValues = string(T.BidsSession);
-    sessionValues(ismissing(sessionValues)) = "";
-
-    subjectValue = subjectValues(rowIdx);
-    sessionValue = sessionValues(rowIdx);
-    if isnan(subjectValue) || strlength(strtrim(sessionValue)) == 0
-        return;
-    end
-
-    mask = subjectValues == subjectValue & sessionValues == sessionValue;
-    if ismember('DoImport', T.Properties.VariableNames)
-        doImport = T.DoImport;
-        if ~isnumeric(doImport)
-            doImport = str2double(string(doImport));
-        end
-        mask = mask & doImport == 1;
-    end
-
-    matchedRows = find(mask);
-    if ~isempty(matchedRows)
-        rows = matchedRows;
-    end
-
-end
-
-function signature = file_signature(filePath)
-
-    info = dir(char(filePath));
-    if isempty(info)
-        signature = "missing";
-    else
-        signature = string(info.bytes) + "|" + compose('%.15g', info.datenum);
-        [folder, base, ext] = fileparts(char(filePath));
-        if strcmpi(ext, '.set')
-            fdtInfo = dir(fullfile(folder, [base '.fdt']));
-            if ~isempty(fdtInfo)
-                signature = signature + "|fdt=" + string(fdtInfo.bytes) + ...
-                    "|" + compose('%.15g', fdtInfo.datenum);
-            end
-        end
-    end
-
-end
-
-function signature = struct_signature(S)
-
-    try
-        txt = jsonencode(orderfields(S));
-    catch
-        txt = evalc('disp(S)');
-    end
-
-    bytes = double(unicode2native(txt, 'UTF-8'));
-    if isempty(bytes)
-        signature = "0-0-0";
-        return;
-    end
-
-    idx = 1:numel(bytes);
-    m = 4294967291;
-    s1 = mod(sum(bytes), m);
-    s2 = mod(sum(mod(bytes .* mod(idx, m), m)), m);
-    signature = string(numel(bytes)) + "-" + compose('%.0f', s1) + "-" + compose('%.0f', s2);
-
-end
 
 function ok = verify_amica_output_provenance(setPath, expectedSignature)
 
