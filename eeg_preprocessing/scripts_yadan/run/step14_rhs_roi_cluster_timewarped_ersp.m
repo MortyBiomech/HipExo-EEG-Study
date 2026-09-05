@@ -295,7 +295,7 @@ assert(numel(gaitPhaseNames) == numel(groupWarpMs) - 1, ...
 
 groupWarpPercent = 100 .* groupWarpMs ./ groupWarpMs(end);
 
-% Reference Step 6 used one complete gait cycle as the ERSP baseline
+% Reference used one complete gait cycle as the ERSP baseline
 % ([0 1200] ms in that dataset). Here the same rule is applied to the
 % data-driven common RHS-to-next-RHS duration rather than hard-coding 1200 ms.
 baselineValue = [0 groupWarpMs(end)];
