@@ -60,10 +60,11 @@ numberOfTimePoints = cfg.ersp.numberOfTimePoints;
 paddingRatio = cfg.ersp.paddingRatio;
 
 
-% Reference-code ERSP settings:
-%   Step 6: full gait-cycle baseline, basenorm='off', trialbase='full'
-%   Step 7: subbaseline='on' so all conditions share one common baseline.
-% baselineValue is defined after the group gait-cycle duration is known.
+% ERSP settings follow the reference gait-analysis implementation:
+% use one complete gait cycle as the baseline window, with
+% basenorm='off' and trialbase='full' during TF precomputation.
+% The common baseline across conditions is applied during ERSP reading.
+% baselineValue is defined from the data-driven group gait-cycle duration.
 baselineNormalization = 'off';
 trialBaselineMode = 'full';
 
