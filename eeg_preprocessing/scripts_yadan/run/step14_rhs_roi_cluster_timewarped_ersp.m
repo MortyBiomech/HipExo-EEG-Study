@@ -46,10 +46,7 @@ addpath(fullfile(scriptsRoot, 'config'), '-begin');
 P = project_paths();
 cfg = config_step12_14_clustering_roi_ersp();
 
-processingVersion = string(cfg.ersp.processingVersion) + ...
-    "_COMMON_BASELINE_LOWEST_IC_BASELINE_CACHE_REUSE_RUNINFO_FIX_LONG_PATH_FIX";
-buildTag = string(cfg.ersp.buildTag) + ...
-    "_COMMON_BASELINE_LOWEST_IC_BASELINE_CACHE_REUSE_RUNINFO_FIX_LONG_PATH_FIX";
+processingVersion = string(cfg.ersp.processingVersion);
 
 numberOfClusters = cfg.clustering.numberOfClusters;
 numberOfRepetitions = cfg.clustering.numberOfRepetitions;
@@ -100,7 +97,6 @@ assert(exist(implementationFile, 'file') == 2, ...
     'Cannot resolve the executing Step 14 script path.');
 
 fprintf('Executing Step 14:\n%s\n', implementationFile);
-fprintf('Build tag: %s\n', char(buildTag));
 
 assert(exist('eeglab', 'file') == 2, ...
     'EEGLAB was not found after loading project_project_paths.m.');
