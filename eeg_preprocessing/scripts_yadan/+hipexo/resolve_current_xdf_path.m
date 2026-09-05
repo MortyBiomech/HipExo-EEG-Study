@@ -8,7 +8,6 @@ function resolvedPath = resolve_current_xdf_path( ...
 % GOAL
 %   Resolve an XDF referenced by an existing QC table after the project has
 %   moved between computers, drives, or operating systems.
-%
 % METHOD
 %   Prefer the path rebuilt below the current raw-data root. If that does
 %   not exist, fall back to the original stored path.

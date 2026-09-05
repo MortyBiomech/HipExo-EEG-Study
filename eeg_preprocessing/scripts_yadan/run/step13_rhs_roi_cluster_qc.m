@@ -1,11 +1,9 @@
 % GOAL
 %   Quality-control the cluster representation found for each fixed ROI
 %   target before those ROI-specific clusters enter the final ERSP analysis.
-%
 % INPUT
 %   Step 12 repeated-clustering summary, membership, solution bank, fixed
 %   ROI definitions, run provenance, and ROI-specific STUDYs.
-%
 % APPROACH
 %   1. Verify repeated-clustering provenance and the solution bank.
 %   2. Quantify ROI distance, RV, spread, subject contribution, solution
@@ -17,7 +15,6 @@
 %   4. Preserve manual review fields when QC is rerun.
 %   5. Write ClusterDecision as the ERSP gate for each ROI-specific cluster.
 %      The fixed ROI definitions themselves are not re-selected here.
-%
 % OUTPUT
 %   03_ROI_cluster_QC/RHS_ROI_cluster_QC_review.xlsx
 %       ROI_Cluster_Review      - compact manual-review table
@@ -28,7 +25,6 @@
 %       Configured_Rules
 %       ROI_Definitions
 %   03_ROI_cluster_QC/figures/*
-%
 % USED BY
 %   step14_rhs_roi_cluster_timewarped_ersp.m
 
@@ -1004,12 +1000,9 @@ for roiIndex = 1:height(enabledROIs)
             subjectContributionCounts);
 
 
-    %% ---------------------------------------------------------------------
     % Scalp-map alignment and correlation
-    %
     % ICA polarity is arbitrary. Maps are RMS-normalized and polarity-aligned
     % only for this QC visualization/correlation; no stored ICA is changed.
-    % ---------------------------------------------------------------------
 
     [alignedScalpMaps, ...
      scalpMeanMap, ...
@@ -1028,9 +1021,7 @@ for roiIndex = 1:height(enabledROIs)
         mean(scalpCorrelations, 'omitnan');
 
 
-    %% ---------------------------------------------------------------------
     % Stability across repeated clustering solutions
-    % ---------------------------------------------------------------------
 
     evaluation = ...
         load( ...
@@ -1206,9 +1197,7 @@ for roiIndex = 1:height(enabledROIs)
     end
 
 
-    %% ---------------------------------------------------------------------
     % Coordinate provenance
-    % ---------------------------------------------------------------------
 
     coordinateProvenanceStatus = ...
         "MATCHES_FIXED_ROI_DEFINITION";
@@ -1218,14 +1207,11 @@ for roiIndex = 1:height(enabledROIs)
         "Fixed target coordinate verified against ROI_definition_used.csv and ROI-specific STUDY metadata.";
 
 
-    %% ---------------------------------------------------------------------
     % Automatic deterministic checks
-    %
     % Numerical quality metrics (distance, RV, spread, scalp correlation,
     % repeated-solution Jaccard, subject balance) are intentionally NOT
     % converted into automatic CAUTION/REVIEW labels. They remain descriptive
     % evidence for the manual cluster QC.
-    % ---------------------------------------------------------------------
 
     hardIssues = strings(0,1);
     reviewIssues = strings(0,1);
@@ -1278,9 +1264,7 @@ for roiIndex = 1:height(enabledROIs)
             reviewIssues);
 
 
-    %% ---------------------------------------------------------------------
     % QC figures
-    % ---------------------------------------------------------------------
 
     memberScalpPath = ...
         fullfile( ...
@@ -1390,9 +1374,7 @@ for roiIndex = 1:height(enabledROIs)
     end
 
 
-    %% ---------------------------------------------------------------------
     % Component detail rows
-    % ---------------------------------------------------------------------
 
     componentROIID = ...
         repmat(roiID, componentCount, 1);
@@ -1462,9 +1444,7 @@ for roiIndex = 1:height(enabledROIs)
     end
 
 
-    %% ---------------------------------------------------------------------
     % ROI summary row
-    % ---------------------------------------------------------------------
 
     newQCRow = ...
         table( ...
@@ -1807,9 +1787,7 @@ qcInfoPath = ...
         cfg.roiClusterQC.runInfoName);
 
 
-%% -------------------------------------------------------------------------
 % Preserve an earlier manual review when this QC script is rerun
-% -------------------------------------------------------------------------
 
 if exist(workbookPath, 'file') == 2
 
@@ -1953,12 +1931,9 @@ if exist(workbookPath, 'file') == 2
 end
 
 
-%% -------------------------------------------------------------------------
 % Build workbook views
-%
 % roiClusterQC remains the complete in-memory QC table. The review workbook
 % separates the fields needed for manual review from repeated-clustering diagnostics.
-% -------------------------------------------------------------------------
 
 reviewColumns = { ...
     'ROIID', ...

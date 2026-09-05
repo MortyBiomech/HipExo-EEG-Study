@@ -1,11 +1,9 @@
 % GOAL
 %   Run basic BeMoBIL EEG preprocessing on each verified subject-level
 %   500 Hz dataset produced by Step 03.
-%
 % INPUT
 %   2_raw-EEGLAB/subject-level/subject_level_EEG_processing_table.csv
 %   Subject-level *_all_sessions_500Hz_with_GRF_events.set datasets.
-%
 % APPROACH
 %   1. Select rows enabled by DoPreprocess.
 %   2. Load one verified subject-level raw EEGLAB dataset per participant.
@@ -13,11 +11,9 @@
 %      ZapLine-Plus preprocessing path.
 %   4. Preserve gait events and disable event-based trimming.
 %   5. Save preprocessing provenance/status without running AMICA.
-%
 % OUTPUT
 %   3_EEG-preprocessing/sub-*/...
 %   Updated subject_level_EEG_processing_table.csv
-%
 % USED BY
 %   Step 06 preprocessing QC and Step 07 AMICA/DIPFIT/ICLabel.
 
@@ -54,9 +50,7 @@ end
 
 % If true:
 %   DoPreprocess will be overwritten from RecommendedDoPreprocess.
-%
 % Recommended for the first run after a new import/audit.
-%
 % if you want to manually edit DoPreprocess in the CSV,
 % set this to false.
 reset_DoPreprocess_from_Recommended = ...
@@ -256,9 +250,7 @@ for r = 1:length(rowsToProcess)
     % Reset config for each file.
     bemobil_config = base_bemobil_config;
 
-    %% --------------------------------------------------------------------
     %  READ LABELS FROM IMPORT TABLE
-    %  --------------------------------------------------------------------
 
     bidsSubject = sourceMap.BidsSubject(rowIdx);
     bidsSession = char(sourceMap.BidsSession(rowIdx));
@@ -323,20 +315,15 @@ for r = 1:length(rowsToProcess)
 
     end
 
-    %% --------------------------------------------------------------------
     %  PROCESSING LABEL
-    %  --------------------------------------------------------------------
 
     % This label is used for preprocessing output.
     % It must be unique per final raw set/session.
-    %
     % Example:
     %   BidsSession:
     %       Pilot2p3day2sesNoExoPost
-    %
     %   ProcessingSubjectLabel:
     %       Pilot2p3day2sesNoExoPost
-    %
     %   ProcessingSubjectFolder:
     %       sub-Pilot2p3day2sesNoExoPost
 
@@ -357,9 +344,7 @@ for r = 1:length(rowsToProcess)
     fprintf('Processing folder:\n%s\n', processingSubjectFolder);
     fprintf('============================================================\n\n');
 
-    %% --------------------------------------------------------------------
     %  RESOLVE IMPORTED EEGLAB FILE PATH FROM RAWSETPATH
-    %  --------------------------------------------------------------------
 
     if ~exist(importedSetPath, 'file')
 
@@ -387,9 +372,7 @@ for r = 1:length(rowsToProcess)
     input_filename = [input_name input_ext];
 
 
-    %% --------------------------------------------------------------------
     %  PREPARE EXPECTED OUTPUT PATH
-    %  --------------------------------------------------------------------
 
     preprocessedFolder = fullfile( ...
         bemobil_config.study_folder, ...
@@ -412,9 +395,7 @@ for r = 1:length(rowsToProcess)
     % The 5_single-subject-EEG-analysis folder belongs to the AMICA/ICA stage
     % and is created by bemobil_process_all_AMICA.m.
 
-    %% --------------------------------------------------------------------
     %  PREPARE TABLE COLUMNS BEFORE POSSIBLE SKIP
-    %  --------------------------------------------------------------------
 
     sourceMap = ensure_string_column(sourceMap, 'ProcessingSubjectLabel');
     sourceMap = ensure_string_column(sourceMap, 'ProcessingSubjectFolder');
@@ -436,9 +417,7 @@ for r = 1:length(rowsToProcess)
         sourceMap.PreprocessingStatus(sessionRows) == "completed" & ...
         sourceMap.PreprocessingInputSignature(sessionRows) == expectedInputSignature);
 
-    %% --------------------------------------------------------------------
     %  SKIP ALREADY COMPLETED PREPROCESSING IF NOT RECOMPUTING
-    %  --------------------------------------------------------------------
 
     if force_recompute == 0 && ...
             sessionAlreadyCompleted && ...
@@ -465,9 +444,7 @@ for r = 1:length(rowsToProcess)
         fprintf('\nExisting preprocessing output is stale or unverified. Forcing a complete BeMoBIL recomputation.\n');
     end
 
-    %% --------------------------------------------------------------------
     %  UPDATE TABLE BEFORE PROCESSING
-    %  --------------------------------------------------------------------
 
     sourceMap.PreprocessingStatus(sessionRows) = "running";
     sourceMap.PreprocessingDate(sessionRows) = string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
@@ -476,9 +453,7 @@ for r = 1:length(rowsToProcess)
 
     writetable(sourceMap, mappingFile);
 
-    %% --------------------------------------------------------------------
     %  EEGLAB MEMORY/SAVE OPTIONS
-    %  --------------------------------------------------------------------
 
     try
         pop_editoptions( ...
@@ -497,9 +472,7 @@ for r = 1:length(rowsToProcess)
     end
 
     hipexo.hide_all_figures();
-    %% --------------------------------------------------------------------
     %  RESET EEGLAB VARIABLES FOR THIS FILE
-    %  --------------------------------------------------------------------
 
     STUDY = [];
     CURRENTSTUDY = 0;
@@ -509,9 +482,7 @@ for r = 1:length(rowsToProcess)
     EEG_interp_avref = [];
     EEG_single_subject_final = [];
 
-    %% --------------------------------------------------------------------
     %  LOAD IMPORTED EEGLAB .SET FILE
-    %  --------------------------------------------------------------------
 
     fprintf('\nLoading imported EEGLAB file:\n%s\nfrom:\n%s\n', input_filename, input_filepath);
 
@@ -530,9 +501,7 @@ for r = 1:length(rowsToProcess)
         continue;
     end
 
-    %% --------------------------------------------------------------------
     %  REQUIRE THE SUBJECT-LEVEL GRF/EVENT INPUT
-    %  --------------------------------------------------------------------
 
     try
 
@@ -600,9 +569,7 @@ for r = 1:length(rowsToProcess)
     end
 
     hipexo.hide_all_figures();
-    %% --------------------------------------------------------------------
     %  STORE SOURCE INFORMATION INSIDE EEG.ETC
-    %  --------------------------------------------------------------------
 
     EEG.etc.source_original_xdf_name = originalXDFName;
     EEG.etc.source_original_xdf_path = originalXDFPath;
@@ -629,9 +596,7 @@ for r = 1:length(rowsToProcess)
         EEG.etc.source_run_number = sourceMap.RunNumber(rowIdx);
     end
 
-    %% --------------------------------------------------------------------
     %  CHECK AND FILTER CHANNELS_TO_REMOVE
-    %  --------------------------------------------------------------------
 
     all_labels = {EEG.chanlocs.labels};
 
@@ -666,9 +631,7 @@ for r = 1:length(rowsToProcess)
     end
 
 
-    %% --------------------------------------------------------------------
     %  EVENT-BASED TRIMMING IS INTENTIONALLY DISABLED
-    %  --------------------------------------------------------------------
 
     nEventsBeforePreprocessing = numel(EEG.event);
 
@@ -679,9 +642,7 @@ for r = 1:length(rowsToProcess)
     EEG.etc.n_events_before_preprocessing = nEventsBeforePreprocessing;
 
     hipexo.hide_all_figures();
-    %% --------------------------------------------------------------------
     %  BASIC EEG PREPROCESSING
-    %  --------------------------------------------------------------------
 
     try
 
@@ -715,9 +676,7 @@ for r = 1:length(rowsToProcess)
 
     end
 
-    %% --------------------------------------------------------------------
     %  CHECK OUTPUT AND UPDATE TABLE
-    %  --------------------------------------------------------------------
 
     outputProvenanceOK = isfield(EEG_preprocessed, 'etc') && ...
         isfield(EEG_preprocessed.etc, 'preprocessing_input_signature') && ...

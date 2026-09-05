@@ -7,7 +7,6 @@
 %                 See Example below.
 % Usage:
 % >> [STUDY ALLEEG customRes] = std_precomp(STUDY, ALLEEG, chanorcomp, 'key', 'val', ...);
-%
 % Required inputs:
 %   STUDY        - an EEGLAB STUDY set of loaded EEG structures
 %   ALLEEG       - ALLEEG vector of one or more loaded EEG dataset structures
@@ -57,14 +56,12 @@
 %                  function. Note that the data is only returned in the
 %                  output of this function and is not saved in a data file.
 %  'customparams' - [cell array] Parameters for the custom function above.
-%
 % Obsolete input:
 %  'savetrials'  - ['on'] save single-trials ERSP. Requires a lot of disk
 %                  space (dataset space on disk times 10) but allow for refined
 %                  single-trial statistics. This option is obsolete. As of
 %                  EEGLAB 14, measures can only be saved in single trial
 %                  mode.
-%
 % Outputs:
 %   STUDY        - the input STUDY set with pre-clustering data added,
 %                  for use by pop_clust()
@@ -76,45 +73,35 @@
 %                  If a custom file extension is specified, this variable
 %                  is empty as the function assumes that the result is too
 %                  large to hold in memory.
-%
 % Example:
 %   >> [STUDY ALLEEG customRes] = std_precomp(STUDY, ALLEEG, { 'cz' 'oz' }, 'interp', ...
 %               'on', 'erp', 'on', 'spec', 'on', 'ersp', 'on', 'erspparams', ...
 %               { 'cycles' [ 3 0.5 ], 'alpha', 0.01, 'padratio' 1 });
-%
 %           % This prepares, channels 'cz' and 'oz' in the STUDY datasets.
 %           % If a data channel is missing in one dataset, it will be
 %           % interpolated (see eeg_interp()). The ERP, spectrum, ERSP, and
 %           % ITC for each dataset is then computed.
-%
 % Example of custom call:
 %   The function below computes the ERP of the EEG data for each channel and plots it.
 %   >> [STUDY ALLEEG customres] = std_precomp(STUDY, ALLEEG, 'channels', 'customfunc', @(EEG,varargin)(mean(EEG.data,3)'));
 %   >> std_plotcurve([1:size(customres{1},1)], customres, 'chanlocs', eeg_mergelocs(ALLEEG.chanlocs)); % plot data
-%
 %   The function below uses a data file to store the information then read
 %   the data and eventyally plot it
 %   >> [STUDY ALLEEG customres] = std_precomp(STUDY, ALLEEG, 'channels', 'customfunc', @(EEG,varargin)(mean(EEG.data,3)), 'customfileext', 'tmperp');
 %   >> erpdata = std_readcustom(STUDY, ALLEEG, 'tmperp');
 %   >> std_plotcurve([1:size(erpdata{1})], erpdata, 'chanlocs', eeg_mergelocs(ALLEEG.chanlocs)); % plot data
-%
 % Authors: Arnaud Delorme, SCCN, INC, UCSD, 2006-
 
 % Copyright (C) Arnaud Delorme, SCCN, INC, UCSD, 2006, arno@sccn.ucsd.edu
-%
 % This file is part of EEGLAB, see http://www.eeglab.org
 % for the documentation and details.
-%
 % Redistribution and use in source and binary forms, with or without
 % modification, are permitted provided that the following conditions are met:
-%
 % 1. Redistributions of source code must retain the above copyright notice,
 % this list of conditions and the following disclaimer.
-%
 % 2. Redistributions in binary form must reproduce the above copyright notice,
 % this list of conditions and the following disclaimer in the documentation
 % and/or other materials provided with the distribution.
-%
 % THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 % AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 % IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -193,10 +180,8 @@ if strcmpi(g.bids, 'on'), fileSuffix = [ '_' STUDY.task ]; else fileSuffix = '';
              end
          end
     end
-% 	%%%%
     
 % union of all channel structures
-% -------------------------------
 computewhat = 'channels';
 if ischar(chanlist)
     if strcmpi(chanlist, 'channels')
@@ -224,7 +209,6 @@ elseif ~isnumeric(chanlist{1})
 end
 
 % test if interp and reconstruct channel list
-% -------------------------------------------
 if strcmpi(computewhat, 'channels')
     if strcmpi(g.interp, 'on')
         STUDY.changrp = [];
@@ -238,7 +222,6 @@ if strcmpi(computewhat, 'channels')
 end
 
 % components or channels
-% ----------------------
 if strcmpi(computewhat, 'channels')
     curstruct = STUDY.changrp;
 else
@@ -254,7 +237,6 @@ allSessions = cellfun(@num2str, allSessions, 'uniformoutput', false);
 uniqueSessions = unique(allSessions);
 
 % compute custom measure
-% ----------------------
 if ~isempty(g.customfunc)
     for iSubj = 1:length(uniqueSubjects)
         for iSess = 1:length(uniqueSessions)
@@ -283,11 +265,9 @@ if ~isempty(g.customfunc)
 end
    
 % compute ERPs
-% ------------
 if strcmpi(g.erp, 'on')
     
     % check dataset consistency
-    % -------------------------
     allPnts = [ALLEEG(:).pnts];
     if iscell(allPnts), allPnts = [ allPnts{:} ]; end
 % we can align time frames later - not necessary
@@ -327,7 +307,6 @@ if strcmpi(g.erp, 'on')
 end
 
 % compute spectrum
-% ----------------
 if strcmpi(g.spec, 'on')
     
     for iSubj = 1:length(uniqueSubjects)
@@ -361,11 +340,9 @@ if strcmpi(g.spec, 'on')
     end
 end
 % compute spectrum
-% ----------------
 if strcmpi(g.erpim, 'on')
     
     % check dataset consistency
-    % -------------------------
     allPnts = [ALLEEG(:).pnts];
     if iscell(allPnts), allPnts = [ allPnts{:} ]; end
     if length(unique(allPnts)) > 1
@@ -410,7 +387,6 @@ if strcmpi(g.erpim, 'on')
 end
 
 % compute ERSP and ITC
-% --------------------
 if strcmpi(g.ersp, 'on') || strcmpi(g.itc, 'on')
     
     % check dataset consistency
@@ -478,7 +454,6 @@ if strcmpi(g.ersp, 'on') || strcmpi(g.itc, 'on')
                 fprintf('\nBaseline =')
                 celldisp(tmpparams(baseline_idx+1));
             end
-            %%%%%%%%%%%%%%%%%%
            
             addopts = { 'savetrials' g.savetrials 'recompute' g.recompute 'fileout' filebase 'trialinfo' trialinfo tmpparams{:} };
             
@@ -510,7 +485,6 @@ if strcmpi(g.ersp, 'on') || strcmpi(g.itc, 'on')
 end
 
 % compute component scalp maps
-% ----------------------------
 if strcmpi(g.scalp, 'on') && ~strcmpi(computewhat, 'channels')
     for index = 1:length(STUDY.datasetinfo)
         % find duplicate
@@ -542,11 +516,9 @@ if strcmpi(g.scalp, 'on') && ~strcmpi(computewhat, 'channels')
 end
 
 % empty cache
-% -----------
 STUDY.cache = [];
 
 % components or channels
-% ----------------------
 if strcmpi(computewhat, 'channels')
     STUDY.changrp = curstruct;
 else STUDY.cluster = curstruct;
@@ -555,7 +527,6 @@ end
 return;
 
 % get file base name
-% ------------------
 function filebase = getfilename(filepath, subj, sess, fileSuffix, onlyOneSession)
 if onlyOneSession
     filebase = fullfile(filepath, [ subj fileSuffix ] );
@@ -565,7 +536,6 @@ else
 end
         
 % find components in cluster for specific dataset
-% -----------------------------------------------
 function rmcomps = getclustcomps(STUDY, rmclust, settmpind)
 
 rmcomps   = cell(1,length(settmpind));
@@ -581,7 +551,6 @@ for idat = 1:length(settmpind) % scan dataset for which to find component cluste
 end
 
 % make option array and channel list (which depend on interp) for any type of measure
-% ----------------------------------------------------------------------
 function [tmpchanlist, opts] = getchansandopts(STUDY, ALLEEG, chanlist, idat, g)
 
 opts = { };
@@ -621,7 +590,6 @@ else
 end
 
 % compute full file names
-% -----------------------
 function res = computeFullFileName(filePaths, fileNames)
 for index = 1:length(fileNames)
     res{index} = fullfile(filePaths{index}, fileNames{index});

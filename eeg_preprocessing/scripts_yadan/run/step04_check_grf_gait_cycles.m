@@ -3,24 +3,20 @@ function [allCycleQC, allSegmentSummary, allEdgeEvents] = ...
 % GOAL
 %   Validate the already detected GRF gait-event sequences and identify
 %   RHS-to-RHS cycles suitable for later EEG epoching.
-%
 % INPUT
 %   Step 03 GRF gait-event outputs below GRF_segmentation_output.
 %   An explicit GRF root folder may optionally be supplied.
-%
 % APPROACH
 %   1. Collect every unique condition/run gait-event source.
 %   2. Validate RHS -> LTO -> LHS -> RTO -> RHS sequence structure.
 %   3. Apply stride-duration and robust outlier QC.
 %   4. Exclude edge cycles conservatively when configured.
 %   5. Save one all-subject set of derived QC tables.
-%
 % OUTPUT
 %   GRF_gait_cycle_QC_all_subjects.csv
 %   GRF_gait_cycle_QC_summary_all_subjects.csv
 %   GRF_gait_edge_events_QC_all_subjects.csv
 %   GRF_RHS_timewarp_cycles_recommended_all_subjects.csv
-%
 % USED BY
 %   Step 12 RHS epoching and time-warp generation.
 

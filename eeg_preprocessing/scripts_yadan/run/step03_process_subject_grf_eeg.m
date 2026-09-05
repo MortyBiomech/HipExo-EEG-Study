@@ -1,24 +1,20 @@
 % GOAL
 %   Process all selected walking XDFs for one participant, or all participants,
 %   from GRF extraction through gait-event mapping and subject concatenation.
-%
 % INPUT
 %   output_data/bemobil_import_table.csv
 %   Raw XDF recordings selected by DoImport and the Step 01/02 QC gates.
-%
 % APPROACH
 %   1. Select official run-001/run-002 XDFs from the import-control table.
 %   2. Process each XDF in true EEG-LSL chronological order.
 %   3. Run GRF extraction, gait-event detection, and GRF-to-EEG mapping.
 %   4. Verify/reuse outputs using provenance signatures when valid.
 %   5. Concatenate all completed recordings for each participant.
-%
 % OUTPUT
 %   GRF_segmentation_output/sub-*/GRF/*
 %   GRF_segmentation_output/sub-*/EEG_with_GRF_events/*
 %   2_raw-EEGLAB/subject-level/*_all_sessions_500Hz_with_GRF_events.set
 %   Per-subject batch-status CSV files.
-%
 % USED BY
 %   step04_check_grf_gait_cycles.m and the later EEG preprocessing pipeline.
 
@@ -795,7 +791,6 @@ fprintf('Subject %s finished: %d/%d completed, %d failed.\n', ...
 
 end
 
-%% ------------------------------------------------------------
 function run_script_isolated(scriptFile)
 run(scriptFile);
 end

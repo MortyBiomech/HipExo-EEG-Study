@@ -2,7 +2,6 @@ function signature = amica_scientific_signature(bemobil_config)
 % GOAL
 %   Create a provenance signature from only settings that can change the
 %   AMICA/DIPFIT/ICLabel/final-cleaned output.
-%
 % METHOD
 %   Exclude force/skip switches, QC thresholds, workbook settings, output
 %   paths/filenames, and later clustering/ERSP parameters. The input

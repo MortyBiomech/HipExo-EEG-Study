@@ -1,7 +1,6 @@
 function cfg = config_step11_rhs_epoched_study()
 % GOAL
 %   Define metadata and output settings for the run-separated RHS STUDY.
-%
 % METHOD
 %   Store STUDY metadata, condition ordering, and output names here.
 %   Dataset identities, dataset counts, run coverage, and IC selections are

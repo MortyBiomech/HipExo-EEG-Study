@@ -2,7 +2,6 @@ function info = activate_shared_ica_compatibility(compatibilityFolder)
 % GOAL
 %   Activate and verify the project-local shared-ICA compatibility copies of
 %   EEGLAB std_preclust and BeMoBIL bemobil_dipoles.
-%
 % METHOD
 %   Resolve original package functions with the compatibility folder removed,
 %   then activate fixed audited copies at the front of the MATLAB path.

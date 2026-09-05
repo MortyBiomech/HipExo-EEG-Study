@@ -1,17 +1,14 @@
 % GOAL
 %   Map GRF-derived gait events onto real samples of the EEG stream from the
 %   same source XDF without resampling the EEG.
-%
 % INPUT
 %   GRF_BATCH_EVENT_FILE, GRF_BATCH_GRF_OUTPUT_FOLDER, and
 %   GRF_BATCH_EEG_OUTPUT_FOLDER supplied internally by
 %   step03_process_subject_grf_eeg.m.
-%
 % OUTPUT
 %   *_EEG_500Hz_with_GRF_events.set
 %   *_GRF_to_EEG_event_mapping.csv
 %   *_EEG_timestamp_gaps.csv
-%
 % METHOD
 %   Preserve the current real-timestamp mapping logic: detect EEG timestamp
 %   gaps, map only to existing EEG samples, exclude events inside gaps, add

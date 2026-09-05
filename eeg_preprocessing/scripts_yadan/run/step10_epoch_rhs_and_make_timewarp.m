@@ -1,13 +1,11 @@
 % GOAL
 %   Create run-separated RHS-to-RHS EEG epochs and gait-landmark latency
 %   matrices for time-warped ERSP analysis.
-%
 % INPUT
 %   output_data/manual_IC_selection_final.xlsx
 %   Step 08 ICA-QC-approved preprocessed_and_ICA datasets.
 %   Current subject-level raw combined EEG with gait events.
 %   Step 04 GRF_RHS_timewarp_cycles_recommended_all_subjects.csv.
-%
 % APPROACH
 %   1. Read the current manual IC decisions and keep exact Yes ICs.
 %   2. Resolve one continuous preprocessed_and_ICA dataset per subject.
@@ -17,12 +15,10 @@
 %   6. Record AMICA bad-sample overlap as QC annotation.
 %   7. Run EEGLAB make_timewarp on RHS-LTO-LHS-RTO-nextRHS landmarks.
 %   8. Save one run-separated dataset per accepted condition/run.
-%
 % OUTPUT
 %   9_RHS-ERSP-run-separated/01_RHS-epoched-sets/*
 %   9_RHS-ERSP-run-separated/01_RHS_epoch_manifest.csv
 %   9_RHS-ERSP-run-separated/01_RHS_epoch_QC.csv
-%
 % USED BY
 %   step11_create_rhs_epoched_study.m
 

@@ -2,7 +2,6 @@ function signature = struct_signature(S)
 % GOAL
 %   Create a compact deterministic signature for a MATLAB configuration
 %   struct used in provenance checks.
-%
 % METHOD
 %   Preserve the current working configuration-signature algorithm exactly:
 %   serialize ordered fields, convert to UTF-8 bytes, then compute two

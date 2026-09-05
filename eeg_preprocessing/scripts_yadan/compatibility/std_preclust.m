@@ -7,25 +7,20 @@
 %                    (one per measure) are concatenated and used as input to the clustering
 %                    algorithm in POP_CLUST. Follow with POP_CLUST. 
 %                    See Example below:
-%
 %  >> [STUDY,ALLEEG] = std_preclust(STUDY,ALLEEG); % prepare to cluster all comps 
 %                                                                % in all sets on all measures
-%
 %  >> [STUDY,ALLEEG] = std_preclust(STUDY,ALLEEG, clustind, preproc1, preproc2...);
 %                                                                % prepare to cluster specified 
 %                                                                % cluster on specified measures
 % Required inputs:
 %   STUDY        - an EEGLAB STUDY set of loaded EEG structures
 %   ALLEEG       - ALLEEG vector of one or more loaded EEG dataset structures
-%
 % Optional inputs:
 %   clustind     - a cluster index for further (hierarchical) clustering -
 %                  for example to cluster a spectrum-based mu-rhythm cluster into 
 %                  dipole location-based left mu and right mu sub-clusters. 
 %                  Should be empty for first stage (whole-STUDY) clustering {default: []}
-%
 %   preproc      - {'command' 'key1' val1 'key2' val2 ...} component clustering measures to prepare
-%
 %            * 'command' = component measure to compute:
 %                    'erp'     = cluster on the component ERPs,
 %                    'dipoles' = cluster on the component [X Y Z] dipole locations
@@ -43,7 +38,6 @@
 %                                  'freqrange', 'padratio', 'timewindow', 'alpha').
 %                    'finaldim' = final number of dimensions. Enables second-level PCA. 
 %                                  By default this command is not used (see Example below).
-%
 %            * 'key'   optional keywords and [values] used to compute the above 'commands':
 %                    'npca'    =  [integer] number of principal components (PCA dimension) of 
 %                                   the selected measures to retain for clustering. {default: 5}
@@ -66,7 +60,6 @@
 %   STUDY        - the input STUDY set with pre-clustering data added, for use by POP_CLUST 
 %   ALLEEG       - the input ALLEEG vector of EEG dataset structures, modified by adding preprocessing 
 %                  data as pointers to Matlab files that hold the pre-clustering component measures.
-%
 % Example:
 %   >> [STUDY ALLEEG] = std_preclust(STUDY, ALLEEG, [],...
 %                        { 'spec'  'npca' 10 'norm' 1 'weight' 1 'freqrange'  [ 3 25 ] } , ...
@@ -78,7 +71,6 @@
 %                        { 'itc'   'npca' 10 'freqrange' [ 3 25 ] 'cycles' [ 3 0.5 ] 'alpha' 0.01 ...
 %                                  'padratio' 4 'timewindow' [ -1600 1495 ] 'norm' 1 'weight' 1 }, ...
 %                        { 'finaldim' 'npca' 10 });
-%                          
 %                   % This prepares, for initial clustering, all components in the STUDY datasets
 %                   % except components with dipole model residual variance (see function 
 %                   % STD_EDITSET for how to select such components).
@@ -88,24 +80,18 @@
 %                   % locations, and on the component mean ERSP and ITC images. 
 %                   % The final keyword specifies final PCA dimension reduction to 10
 %                   % principal dimensions. See the clustering tutorial for more details.
-%
 % Authors: Arnaud Delorme, Hilit Serby & Scott Makeig, SCCN, INC, UCSD, May 13, 2004
 
 % Copyright (C) Arnaud Delorme, SCCN, INC, UCSD, May 13,2004, arno@sccn.ucsd.edu
-%
 % This file is part of EEGLAB, see http://www.eeglab.org
 % for the documentation and details.
-%
 % Redistribution and use in source and binary forms, with or without
 % modification, are permitted provided that the following conditions are met:
-%
 % 1. Redistributions of source code must retain the above copyright notice,
 % this list of conditions and the following disclaimer.
-%
 % 2. Redistributions in binary form must reproduce the above copyright notice,
 % this list of conditions and the following disclaimer in the documentation
 % and/or other materials provided with the distribution.
-%
 % THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 % AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 % IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -130,7 +116,6 @@ function [ STUDY, ALLEEG ] = std_preclust(STUDY, ALLEEG, cluster_ind, varargin)
     end    
 
     % check dataset length consistency before computing
-    % -------------------------------------------------
     pnts  = ALLEEG(STUDY.datasetinfo(1).index).pnts;
     srate = ALLEEG(STUDY.datasetinfo(1).index).srate;
     xmin  = ALLEEG(STUDY.datasetinfo(1).index).xmin;
@@ -146,7 +131,6 @@ function [ STUDY, ALLEEG ] = std_preclust(STUDY, ALLEEG, cluster_ind, varargin)
     end
     
     % Get component indices that are part of the cluster 
-    % --------------------------------------------------
     if isempty(cluster_ind)
         cluster_ind = 1;
     end
@@ -155,7 +139,6 @@ function [ STUDY, ALLEEG ] = std_preclust(STUDY, ALLEEG, cluster_ind, varargin)
     end
     
     % Decode input arguments
-    % ----------------------
     update_flag  = 0;
     rv           = 1;
     secondlevpca = Inf;
@@ -174,19 +157,16 @@ function [ STUDY, ALLEEG ] = std_preclust(STUDY, ALLEEG, cluster_ind, varargin)
     varargin(indrm) = []; %remove commands
     
     % Scan which component to remove (no dipole info)
-    % -----------------------------------------------
     if update_flag % dipole information is used to select components
         error('Update flag is obsolete');
     end
     
     % scan all commands
-    % -----------------
     clustdata = [];
     erspquery = 0;
     for index = 1:length(varargin)
         
         % decode inputs
-        % -------------
         strcom = varargin{index}{1};
         if any(strcom == 'X'), disp('character ''X'' found in command'); end
         %default values
@@ -231,14 +211,12 @@ function [ STUDY, ALLEEG ] = std_preclust(STUDY, ALLEEG, cluster_ind, varargin)
         end
                 
         % scan datasets
-        % -------------
         if strcmpi(strcom, 'scalp'),           scalpmodif = 'none';
         elseif strcmpi(strcom, 'scalpLaplac'), scalpmodif = 'laplacian';
         else                                   scalpmodif = 'gradient';
         end
         
         % check that all datasets are in preclustering for current design
-        % ---------------------------------------------------------------
         alldatasets = unique_bc(STUDY.cluster(cluster_ind).sets(:));
         
         if length(alldatasets) < length(STUDY.datasetinfo) && cluster_ind == 1
@@ -250,7 +228,6 @@ function [ STUDY, ALLEEG ] = std_preclust(STUDY, ALLEEG, cluster_ind, varargin)
         switch strcom
             
             % select ica component ERPs
-            % -------------------------
             case 'erp'
                 [STUDY, data, datatime] = std_readerp( STUDY, ALLEEG, 'design', NaN, 'clusters', cluster_ind, 'timerange', timewindow, 'datatype', 'erp', 'componentpol', 'off');
                 % Filtering data to be plotted
@@ -258,13 +235,11 @@ function [ STUDY, ALLEEG ] = std_preclust(STUDY, ALLEEG, cluster_ind, varargin)
                 data = data{1}';
                 
             % select ica component spectrum
-            % -----------------------------
             case 'spec'
                 [STUDY, data] = std_readerp( STUDY, ALLEEG, 'design', NaN, 'clusters', cluster_ind, 'freqrange', freqrange, 'datatype', 'spec', 'componentpol', 'off');
                 data = data{1}';
                 
             % select ica scalp maps
-            % ---------------------
             case { 'scalp' 'scalpLaplac' 'scalpGrad' }
                 for si = 1:size(STUDY.cluster(cluster_ind).sets,2)
                     idat = STUDY.datasetinfo(STUDY.cluster(cluster_ind).sets(find(isfinite(STUDY.cluster(cluster_ind).sets(:,si)) & STUDY.cluster(cluster_ind).sets(:,si) > 0, 1, 'first'), si)).index;
@@ -274,7 +249,6 @@ function [ STUDY, ALLEEG ] = std_preclust(STUDY, ALLEEG, cluster_ind, varargin)
                 end
                 
             % select ica equivalent dipole locations
-            % --------------------------------------
             case 'dipoles'
                 for si = 1:size(STUDY.cluster(cluster_ind).sets,2)
                     idat  = STUDY.datasetinfo(STUDY.cluster(cluster_ind).sets(1,si)).index;
@@ -282,7 +256,6 @@ function [ STUDY, ALLEEG ] = std_preclust(STUDY, ALLEEG, cluster_ind, varargin)
                     fprintf('Pre-clustering array row %d, adding dipole for dataset %d component %d...\n', si, idat, icomp);
                     try
                         % select among 3 sub-options
-                        % --------------------------
                         ldip = 1;
                         if size(ALLEEG(idat).dipfit.model(icomp).posxyz,1) == 2 % two dipoles model
                             if any(ALLEEG(idat).dipfit.model(icomp).posxyz(1,:)) ...
@@ -303,7 +276,6 @@ function [ STUDY, ALLEEG ] = std_preclust(STUDY, ALLEEG, cluster_ind, varargin)
                 end
 
             % select ica equivalent dipole moments
-            % ------------------------------------
             case 'moments'
                 for si = 1:size(STUDY.cluster(cluster_ind).sets,2)
                     idat  = STUDY.datasetinfo(STUDY.cluster(cluster_ind).sets(1,si)).index;
@@ -311,7 +283,6 @@ function [ STUDY, ALLEEG ] = std_preclust(STUDY, ALLEEG, cluster_ind, varargin)
                     fprintf('Pre-clustering array row %d, adding dipole moment for dataset %d component %d...\n', si, idat, icomp);
                     try
                         % select among 3 sub-options
-                        % --------------------------
                         ldip = 1;
                         if size(ALLEEG(idat).dipfit.model(icomp).posxyz,1) == 2 % two dipoles model
                             if any(ALLEEG(idat).dipfit.model(icomp).posxyz(1,:)) ...
@@ -335,7 +306,6 @@ function [ STUDY, ALLEEG ] = std_preclust(STUDY, ALLEEG, cluster_ind, varargin)
                 end
                 
             % cluster on ica ersp / itc values
-            % --------------------------------
             case  {'ersp', 'itc' }
                 [STUDY, data] = std_readersp( STUDY, ALLEEG, 'design', NaN, 'clusters', cluster_ind, 'timerange', timewindow, 'freqrange', freqrange, 'measure', strcom);
                 data = reshape(data{1}, [size(data{1},1)*size(data{1},2) size(data{1},3)])';
@@ -343,12 +313,10 @@ function [ STUDY, ALLEEG ] = std_preclust(STUDY, ALLEEG, cluster_ind, varargin)
         end
 
         % adjust number of PCA values
-        % ---------------------------
         if isnan(npca), npca = 5; end % default number of components
         if npca >= size(data,2)
             % no need to run PCA, just copy the data.
             % But still run it to "normalize" coordinates
-            % --------------------------------------
             npca = size(data,2);
         end
         if npca >= size(data,1) % cannot be more than the number of components
@@ -363,7 +331,6 @@ function [ STUDY, ALLEEG ] = std_preclust(STUDY, ALLEEG, cluster_ind, varargin)
         end
         
         % run PCA to reduce data dimension
-        % --------------------------------
         switch strcom
             case {'ersp','itc'}
                 dsflag = 1;
@@ -373,7 +340,6 @@ function [ STUDY, ALLEEG ] = std_preclust(STUDY, ALLEEG, cluster_ind, varargin)
                         dsflag = 0;
                     catch
                         % downsample frequency by 2 and times by 2
-                        % ----------------------------------------
                         data = data(:,1:2:end);
                         %idat = STUDY.datasetinfo(STUDY.setind(1)).index; 
                         %[ tmp freqs times ] = std_readersp( ALLEEG, idat, succompind{1}(1));
@@ -418,7 +384,6 @@ function [ STUDY, ALLEEG ] = std_preclust(STUDY, ALLEEG, cluster_ind, varargin)
     end
     
     % Compute a second PCA of the already PCA'd data if there are too many PCA dimensions.
-    % ------------------------------------------------------------------------------------
     if size(clustdata,2) > secondlevpca
         fprintf('Performing second-level PCA: reducing dimension from %d to %d \n', ...
                 size(clustdata,2), secondlevpca);
@@ -471,7 +436,6 @@ function cluster = checkcentroidfield(cluster, varargin)
     end
     
     % rapid filtering for ERP (from std_plotcurve)
-% -----------------------
 function tmpdata2 = myfilt(tmpdata, srate, lowpass, highpass)
 if ischar(highpass)
     highpass = str2num(highpass);

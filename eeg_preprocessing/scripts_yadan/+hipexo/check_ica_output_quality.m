@@ -1,7 +1,6 @@
 % GOAL
 %   Perform the complete structural and consistency QC for one set of
 %   AMICA, DIPFIT, ICLabel, preprocessed-ICA, and cleaned-ICA outputs.
-%
 % METHOD
 %   Preserve the current working Step 08 QC logic exactly while moving the
 %   single-dataset check out of the orchestration script.
@@ -35,9 +34,7 @@ function [status, notes, metrics] = check_ica_output_quality(cleanedSetPath, pre
         failures(end+1, 1) = "dipfitted_set_missing";
     end
 
-    %% --------------------------------------------------------------------
     %  Load cleaned_with_ICA.set for final cleaned EEG data checks
-    %  --------------------------------------------------------------------
 
     try
         EEG_cleaned = load_set_local(cleanedSetPath);
@@ -77,9 +74,7 @@ function [status, notes, metrics] = check_ica_output_quality(cleanedSetPath, pre
         warnings(end+1, 1) = "duplicate_channel_labels_in_cleaned_set";
     end
 
-    %% --------------------------------------------------------------------
     %  Load preprocessed_and_ICA.set for ICA / ICLabel / DIPFIT checks
-    %  --------------------------------------------------------------------
 
     if metrics.hasPreprocessedICASet
 
@@ -250,9 +245,7 @@ function [status, notes, metrics] = check_ica_output_quality(cleanedSetPath, pre
     end
 
 
-    %% --------------------------------------------------------------------
     %  Verify AMICA.set and dipfitted.set use the same spatial filter
-    %  --------------------------------------------------------------------
 
     if ~isempty(EEG_ica) && metrics.hasAMICASet
         try
@@ -267,9 +260,7 @@ function [status, notes, metrics] = check_ica_output_quality(cleanedSetPath, pre
         end
     end
 
-    %% --------------------------------------------------------------------
     %  Check dipfitted.set contains DIPFIT as expected
-    %  --------------------------------------------------------------------
 
     if metrics.hasDipfittedSet
 
@@ -297,9 +288,7 @@ function [status, notes, metrics] = check_ica_output_quality(cleanedSetPath, pre
 
     end
 
-    %% --------------------------------------------------------------------
     %  Rank sanity check
-    %  --------------------------------------------------------------------
 
     if metrics.hasICAWeights && ~isnan(metrics.nICs) && ~isnan(metrics.rankEstimate)
         if metrics.nICs > metrics.rankEstimate + 2
@@ -307,9 +296,7 @@ function [status, notes, metrics] = check_ica_output_quality(cleanedSetPath, pre
         end
     end
 
-    %% --------------------------------------------------------------------
     %  Final status
-    %  --------------------------------------------------------------------
 
     if isempty(failures) && isempty(warnings)
         status = "passed_ica_quality_basic_checks";

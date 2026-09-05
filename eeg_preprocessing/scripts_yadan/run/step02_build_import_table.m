@@ -1,21 +1,17 @@
 % GOAL
 %   Build the run-level BeMoBIL import-control table from the structural XDF
 %   EEG/GRF audit generated in Step 01.
-%
 % INPUT
 %   output_data/xdf_file_stream_summary.csv
 %   output_data/xdf_stream_detail_table.csv
-%
 % APPROACH
 %   1. Keep every XDF containing a real EEG stream visible in the table.
 %   2. Resolve XDF paths against the current raw-data root.
 %   3. Select the usable EEG/GRF stream metadata for each recording.
 %   4. Apply the configured run, backup-file, non-walking, EEG, and GRF gates.
 %   5. Preserve a manual DoImport decision only when source identity is unchanged.
-%
 % OUTPUT
 %   output_data/bemobil_import_table.csv
-%
 % USED BY
 %   Step 03 GRF/EEG subject processing and later EEG import/preprocessing.
 
@@ -262,7 +258,6 @@ for k = 1:numel(eegRows)
     % Put raw source information into session label:
     %   Sub-P2_1 + day2 + ses-Exo1_sport
     %   -> Pilot2p1day2sesExo1Sport
-    %
     % RunNumber is stored separately and passed to bemobil_xdf2bids as config.run.
     pilotLabel = "Pilot" + string(pilotNumber) + "p" + string(subjectNumber);
     sessionLabel = pilotLabel + rawDay + hipexo.make_bids_label(rawSession);

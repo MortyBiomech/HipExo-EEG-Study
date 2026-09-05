@@ -2,24 +2,20 @@
 %   Scan new or changed XDF recordings and create structural EEG/GRF
 %   usability audits that determine which recordings may enter the
 %   import-control table.
-%
 % INPUT
 %   Raw XDF files below P.rawDataFolder.
 %   Existing Step 01 audit tables, when available.
-%
 % APPROACH
 %   1. Find all XDF files.
 %   2. Reuse existing QC results for unchanged XDF files.
 %   3. Inspect only new or changed files with hipexo.inspect_xdf_file().
 %   4. Evaluate EEG and GRF independently.
 %   5. Autosave audit tables while scanning.
-%
 % OUTPUT
 %   output_data/xdf_file_stream_summary.csv
 %   output_data/xdf_stream_detail_table.csv
 %   output_data/xdf_eeg_quality_audit.csv
 %   output_data/xdf_grf_quality_audit.csv
-%
 % USED BY
 %   step02_build_import_table.m
 

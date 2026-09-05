@@ -1,22 +1,18 @@
 % GOAL
 %   Build a continuous subject-level EEGLAB STUDY for manual ROI
 %   determination using the ICs marked Yes in the current review workbook.
-%
 % INPUT
 %   output_data/manual_IC_selection_final.xlsx
 %   subject_level_EEG_table.csv
 %   Step 08 ICA-QC-approved preprocessed_and_ICA datasets.
-%
 % APPROACH
 %   1. Read the current manual IC decisions.
 %   2. Resolve one continuous preprocessed_and_ICA dataset per subject.
 %   3. Verify ICA QC, AMICA provenance, and selected IC indices.
 %   4. Build a STUDY whose datasetinfo.comps contains each subject's Yes ICs.
-%
 % OUTPUT
 %   output_data/ROI_determination/HipExo_manual_IC_Yes_only.study
 %   output_data/ROI_determination/ROI_determination_dataset_manifest.csv
-%
 % USED BY
 %   Manual ROI determination in EEGLAB.
 

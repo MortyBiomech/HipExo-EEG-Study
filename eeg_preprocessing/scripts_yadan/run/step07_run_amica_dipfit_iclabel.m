@@ -1,25 +1,21 @@
 % GOAL
 %   Run AMICA source decomposition followed by DIPFIT source localization
 %   and ICLabel classification for EEG datasets that passed Step 06 QC.
-%
 % INPUT
 %   Updated subject_level_EEG_processing_table.csv from Step 06.
 %   Verified preprocessed .set/.fdt datasets produced by Step 05.
-%
 % APPROACH
 %   1. Select rows enabled by DoAMICA after preprocessing QC.
 %   2. Verify FieldTrip/DIPFIT resources before starting the expensive run.
 %   3. Reuse only complete AMICA outputs with matching provenance.
 %   4. Otherwise run the established BeMoBIL AMICA/DIPFIT/ICLabel pipeline.
 %   5. Verify all expected output datasets and update processing status.
-%
 % OUTPUT
 %   AMICA.set
 %   dipfitted.set
 %   preprocessed_and_ICA.set
 %   cleaned_with_ICA.set
 %   Updated subject_level_EEG_processing_table.csv
-%
 % USED BY
 %   Step 08 AMICA / ICA / ICLabel / DIPFIT quality control.
 
@@ -86,7 +82,6 @@ hipexo.hide_all_figures();
 % EEGLAB can additionally place Fieldtrip-lite on the MATLAB path. Keeping
 % both versions active can make DIPFIT resolve functions and template files
 % from different installations.
-%
 % For this AMICA/DIPFIT stage, use the complete FieldTrip installation
 % configured in project_paths.m and remove only Fieldtrip-lite path entries from the
 % current MATLAB session. This does not modify the saved MATLAB path and does
@@ -572,9 +567,7 @@ for r = 1:length(rowsToProcess)
 
     end
 
-    %% --------------------------------------------------------------------
     %  RESOLVE PROCESSING LABEL
-    %  --------------------------------------------------------------------
 
     if ismember('ProcessingSubjectLabel', sourceMap.Properties.VariableNames) && ...
             strlength(strtrim(string(sourceMap.ProcessingSubjectLabel(rowIdx)))) > 0
@@ -598,9 +591,7 @@ for r = 1:length(rowsToProcess)
 
     end
 
-    %% --------------------------------------------------------------------
     %  RESOLVE PREPROCESSED .SET FILE PATH
-    %  --------------------------------------------------------------------
 
     preprocessedSetPath = string(sourceMap.PreprocessedSetPath(rowIdx));
 
@@ -664,9 +655,7 @@ for r = 1:length(rowsToProcess)
     [preprocFolder, preprocFileNoExt, preprocExt] = fileparts(preprocessedSetPath);
     preprocFile = [preprocFileNoExt preprocExt];
 
-    %% --------------------------------------------------------------------
     %  PREPARE AMICA STATUS COLUMNS BEFORE POSSIBLE SKIP
-    %  --------------------------------------------------------------------
 
     sourceMap = ensure_string_column(sourceMap, 'AMICAStatus');
     sourceMap = ensure_string_column(sourceMap, 'AMICADate');
@@ -697,9 +686,7 @@ for r = 1:length(rowsToProcess)
             existingPreprocessedICASetPath, expectedAMICAInputSignature);
     end
 
-    %% --------------------------------------------------------------------
     %  SKIP EXISTING COMPLETE AMICA OUTPUTS IF NOT RECOMPUTING
-    %  --------------------------------------------------------------------
 
     if skip_existing_complete_outputs && ...
             force_recompute_amica == 0 && ...
@@ -753,9 +740,7 @@ for r = 1:length(rowsToProcess)
 
     end
 
-    %% --------------------------------------------------------------------
     %  UPDATE TABLE BEFORE AMICA
-    %  --------------------------------------------------------------------
 
     sourceMap.AMICAStatus(sessionRows) = "running";
     sourceMap.AMICADate(sessionRows) = string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
@@ -772,9 +757,7 @@ for r = 1:length(rowsToProcess)
 
     writetable(sourceMap, mappingFile);
 
-    %% --------------------------------------------------------------------
     %  RESET EEGLAB VARIABLES FOR THIS AMICA RUN
-    %  --------------------------------------------------------------------
 
     STUDY = [];
     CURRENTSTUDY = 0;
@@ -785,9 +768,7 @@ for r = 1:length(rowsToProcess)
 
     hipexo.hide_all_figures();
 
-    %% --------------------------------------------------------------------
     %  LOAD EXISTING PREPROCESSED EEG
-    %  --------------------------------------------------------------------
 
     fprintf('\nLoading existing preprocessed EEG:\n%s\n', preprocessedSetPath);
 
@@ -816,9 +797,7 @@ for r = 1:length(rowsToProcess)
 
     end
 
-    %% --------------------------------------------------------------------
     %  STORE SOURCE INFORMATION INSIDE EEG.ETC AGAIN
-    %  --------------------------------------------------------------------
 
     EEG_preprocessed.etc.source_original_xdf_name = originalXDFName;
     EEG_preprocessed.etc.source_original_xdf_path = originalXDFPath;
@@ -845,9 +824,7 @@ for r = 1:length(rowsToProcess)
     fprintf('Duration: %.2f seconds\n', EEG_preprocessed.xmax - EEG_preprocessed.xmin);
     fprintf('Events: %d\n', length(EEG_preprocessed.event));
 
-    %% --------------------------------------------------------------------
     %  BASIC SAFETY CHECK BEFORE AMICA
-    %  --------------------------------------------------------------------
 
     if EEG_preprocessed.nbchan ~= expectedChannelsBeforeAMICA
 
@@ -908,9 +885,7 @@ for r = 1:length(rowsToProcess)
 
     fprintf('AMICA PCA rank from EEG.etc.rank: %d\n', amicaDataRank);
 
-    %% --------------------------------------------------------------------
     %  RUN AMICA ONLY
-    %  --------------------------------------------------------------------
 
     try
 
@@ -947,9 +922,7 @@ for r = 1:length(rowsToProcess)
 
     end
 
-    %% --------------------------------------------------------------------
     %  VERIFY ALL EXPECTED AMICA / DIPFIT / ICA OUTPUT FILES
-    %  --------------------------------------------------------------------
 
     [foundAMICASetPath, foundDipfittedSetPath, foundPreprocessedICASetPath, ...
         foundCleanedICASetPath, amicaOutputStatus, amicaCandidates] = find_all_amica_outputs( ...

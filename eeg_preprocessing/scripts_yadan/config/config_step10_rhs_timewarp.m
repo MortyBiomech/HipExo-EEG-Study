@@ -1,7 +1,6 @@
 function cfg = config_step10_rhs_timewarp()
 % GOAL
 %   Define RHS-to-RHS epoching, gait-cycle QC, and make_timewarp settings.
-%
 % METHOD
 %   Store analysis parameters, condition labels, and output names here.
 %   Dataset identities and IC selections are read from the current manual IC review and subject-level processing table.

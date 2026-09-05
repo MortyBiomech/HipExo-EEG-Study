@@ -7,7 +7,6 @@ function [startSec, endSec, threshold] = ...
 % GOAL
 %   Detect sustained walking intervals from GRF activity when valid
 %   GRF START/END markers are unavailable.
-%
 % METHOD
 %   Estimate quiet and active GRF levels using robust quantiles, threshold
 %   between them, require sustained activity, merge short gaps, remove short

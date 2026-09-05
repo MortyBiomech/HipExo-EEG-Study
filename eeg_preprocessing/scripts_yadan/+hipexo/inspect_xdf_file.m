@@ -2,7 +2,6 @@ function result = inspect_xdf_file(xdfPath, fileIndex, cfg)
 % GOAL
 %   Inspect one XDF file and independently evaluate its EEG and GRF streams
 %   for structural usability before downstream processing.
-%
 % METHOD
 %   Load the XDF once, derive timestamp/data integrity measures for each
 %   stream, evaluate EEG and GRF independently, then create the same audit

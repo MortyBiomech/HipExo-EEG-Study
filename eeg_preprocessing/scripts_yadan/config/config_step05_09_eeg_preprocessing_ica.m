@@ -2,7 +2,6 @@ function bemobil_config = config_step05_09_eeg_preprocessing_ica(P)
 % GOAL
 %   Define the BeMoBIL EEG preprocessing, AMICA, DIPFIT, and ICLabel
 %   parameters used before manual cortical IC review.
-%
 % METHOD
 %   Preserve the current working preprocessing settings while keeping
 %   repeated clustering, ROI, and ERSP parameters out of this configuration.
@@ -195,7 +194,6 @@ bemobil_config.iclabel_classifier = 'lite';
 % 5 Line Noise
 % 6 Channel Noise
 % 7 Other
-%
 % Dominant Eye components are removed from cleaned_with_ICA.
 % preprocessed_and_ICA remains the source for manual cortical IC review.
 bemobil_config.iclabel_classes = [1 2 4 5 6 7];

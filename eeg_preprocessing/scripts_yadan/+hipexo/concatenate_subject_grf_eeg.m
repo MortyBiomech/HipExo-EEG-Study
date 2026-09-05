@@ -1,7 +1,6 @@
 % GOAL
 %   Concatenate all completed 500 Hz EEG recordings for one participant after
 %   GRF-derived gait events and project channel locations have been added.
-%
 % METHOD
 %   Preserve the current true-LSL chronological ordering, channel/layout
 %   validation, gait-event provenance, boundary insertion, source manifest,
@@ -750,7 +749,6 @@ fprintf('Source manifest:\n%s\n', manifestFile);
 
 end
 
-%% ------------------------------------------------------------
 function validate_source_eeg( ...
         EEG, ...
         metadata, ...

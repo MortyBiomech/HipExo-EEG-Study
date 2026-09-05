@@ -1,30 +1,25 @@
 % GOAL
 %   Verify the AMICA, ICA, ICLabel, and DIPFIT outputs produced by Step 07
 %   before any manual cortical IC decision is made.
-%
 % INPUT
 %   Updated subject_level_EEG_table.csv from Step 07.
 %   AMICA.set, dipfitted.set, preprocessed_and_ICA.set, and
 %   cleaned_with_ICA.set for each completed participant/session.
-%
 % APPROACH
 %   1. Select completed and provenance-verified Step 07 outputs.
 %   2. Check cleaned EEG structure, sampling rate, finite data, and rank.
 %   3. Check ICA matrices, AMICA metadata/provenance, and bad-sample mask.
 %   4. Check ICLabel and DIPFIT dimensions and summary metrics.
 %   5. Write ICA-QC status and metrics back to the processing table.
-%
 % OUTPUT
 %   Updated subject_level_EEG_table.csv
 %   output_data/amica_ica_quality_summary.csv
-%
 % USED BY
 %   step09_update_manual_ic_review.m
 
 clear; clc; close all;
 
 % Step 08 is a batch-QC step, so figures are hidden while it runs.
-%
 % IMPORTANT:
 % MATLAB/EEGLAB figure visibility is restored to ON at the end of this
 % script, including when Step 08 terminates with an error. This is required
@@ -763,7 +758,6 @@ end
 function restore_figure_visibility_local()
 
     % Restore normal interactive MATLAB/EEGLAB figure behavior.
-    %
     % Do NOT close figures here. The purpose is only to ensure that future
     % EEGLAB GUI actions such as Component maps / ICLabel properties can
     % create visible windows.

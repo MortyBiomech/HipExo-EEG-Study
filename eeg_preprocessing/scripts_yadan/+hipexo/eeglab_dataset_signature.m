@@ -1,7 +1,6 @@
 function signature = eeglab_dataset_signature(filePath)
 % GOAL
 %   Create the provenance signature used for an EEGLAB dataset input.
-%
 % METHOD
 %   Preserve the current working signature logic exactly. For a .set file,
 %   include both .set and companion .fdt metadata when the .fdt exists.

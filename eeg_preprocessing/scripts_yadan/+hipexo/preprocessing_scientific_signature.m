@@ -2,7 +2,6 @@ function signature = preprocessing_scientific_signature(bemobil_config)
 % GOAL
 %   Create a provenance signature from only settings that can change the
 %   numerical/basic EEG preprocessing result.
-%
 % METHOD
 %   Exclude force/skip switches, QC thresholds, workbook settings, output
 %   paths/filenames, AMICA/DIPFIT/ICLabel settings, and later analysis

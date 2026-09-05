@@ -2,7 +2,6 @@ function cfg = config_step03_04_grf_processing()
 % GOAL
 %   Define the parameters used for GRF extraction, walking-interval
 %   segmentation, gait-event detection, GRF-to-EEG mapping, and gait-cycle QC.
-%
 % METHOD
 %   Preserve the current working GRF parameters while exposing the values
 %   that are scientifically or operationally useful to tune later.

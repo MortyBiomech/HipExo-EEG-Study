@@ -1,7 +1,6 @@
 function signature = file_signature(filePath)
 % GOAL
 %   Create a lightweight provenance signature for one existing file.
-%
 % METHOD
 %   Use file metadata rather than reading file contents so provenance checks
 %   remain fast for large XDF, MAT, and EEGLAB files.

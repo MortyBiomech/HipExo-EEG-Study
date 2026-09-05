@@ -1,11 +1,9 @@
 % GOAL
 %   Automatically create/update one manual cortical IC review workbook from
 %   all Step-08-approved subject-level preprocessed_and_ICA datasets.
-%
 % INPUT
 %   subject_level_EEG_table.csv from Steps 07/08.
 %   PreprocessedICASetPath for every ICA-QC-approved subject.
-%
 % APPROACH
 %   1. Restore MATLAB/EEGLAB figure visibility for interactive IC review.
 %   2. Automatically load every Step-08-approved preprocessed_and_ICA.set.
@@ -17,10 +15,8 @@
 %   6. Insert a clearly labelled separator row between subjects.
 %   7. On Windows with Microsoft Excel available, colour the complete
 %      separator row light yellow and make its label bold.
-%
 % OUTPUT
 %   output_data/manual_IC_selection_final.xlsx
-%
 % USED BY
 %   step10_apply_manual_ic_selection.m
 
@@ -263,17 +259,13 @@ for d = 1:numel(rowsToReview)
         setPath);
 
 
-    %% --------------------------------------------------------------------
     %  LOAD ICA / ICLABEL / DIPFIT INFORMATION
-    %  --------------------------------------------------------------------
 
     EEG_review = ...
         load_ica_header_local(setPath);
 
 
-    %% --------------------------------------------------------------------
     %  RESOLVE DATASET IDENTITY
-    %  --------------------------------------------------------------------
 
     [ ...
         subjectLabel, ...
@@ -286,9 +278,7 @@ for d = 1:numel(rowsToReview)
             setPath);
 
 
-    %% --------------------------------------------------------------------
     %  BUILD IC TABLE
-    %  --------------------------------------------------------------------
 
     currentTables{d} = ...
         build_ic_table_local( ...
@@ -406,9 +396,7 @@ if exist( ...
         end
 
 
-        %% ----------------------------------------------------------------
         %  PRESERVE PREVIOUS MANUAL REVIEW
-        %  ----------------------------------------------------------------
 
         [ ...
             hasOldReview, ...
@@ -427,9 +415,7 @@ if exist( ...
                 oldLocation(hasOldReview));
 
 
-        %% ----------------------------------------------------------------
         %  REPLACE DATASETS REGENERATED THIS RUN
-        %  ----------------------------------------------------------------
 
         currentDatasetKey = ...
             lower(strtrim(currentTable.Subject)) + "|" + ...
@@ -1377,13 +1363,11 @@ function validRows = ...
         valid_ic_rows_local(T)
 
     % A real IC row must contain a valid subject/session/file/IC.
-    %
     % Subject separator rows deliberately have:
     %   Subject = "NEXT SUBJECT: ..."
     %   Session = ""
     %   Dataset/File = ""
     %   IC = NaN
-    %
     % Therefore they are rejected here automatically.
 
     validRows = ...
@@ -1480,19 +1464,14 @@ function [ ...
     % GOAL
     %   Insert a clearly labelled visual separator immediately before each
     %   new subject.
-    %
     % Example:
-    %
     %   sub-Pilot2_1 ... IC 58
     %   NEXT SUBJECT: sub-Pilot2_3
     %   sub-Pilot2_3 ... IC 1
-    %
     % The separator row is NOT a real IC row:
-    %
     %   Session      = blank
     %   Dataset/File = blank
     %   IC           = blank
-    %
     % Therefore it cannot enter downstream IC selection.
 
     T = ...
@@ -1627,10 +1606,8 @@ function format_subject_separator_rows_local( ...
 
     % GOAL
     %   Highlight the complete visual subject-separator rows.
-    %
     % Windows + Microsoft Excel:
     %   Uses Excel COM automation to apply a light-yellow fill and bold text.
-    %
     % Other environments / Excel unavailable:
     %   No processing failure. The textual "NEXT SUBJECT: ..." label remains
     %   visible, so the workbook is still fully usable.
@@ -1784,7 +1761,6 @@ function columnName = ...
     %   1  -> A
     %   26 -> Z
     %   27 -> AA
-    %
     % Current review table has 17 columns -> Q.
 
     if ~isscalar(columnNumber) || ...

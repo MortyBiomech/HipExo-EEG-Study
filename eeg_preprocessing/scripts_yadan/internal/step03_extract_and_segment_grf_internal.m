@@ -1,15 +1,12 @@
 % GOAL
 %   Extract the GRF stream from one batch-selected XDF and define accepted
 %   walking intervals before gait-event detection.
-%
 % INPUT
 %   GRF_BATCH_XDF_FILE and GRF_BATCH_GRF_OUTPUT_FOLDER supplied internally
 %   by step03_process_subject_grf_eeg.m.
-%
 % OUTPUT
 %   *_GRF_stream.mat
 %   *_GRF_segmentation_QC.png
-%
 % METHOD
 %   Preserve the current working marker-first/GRF-activity segmentation
 %   logic. This is an internal Step 03 worker and is not run manually.
@@ -394,13 +391,11 @@ end
 
 % Do not sum the eight GRF channels. They may represent different
 % physical quantities and may also contain different baseline offsets.
-%
 % Instead:
 % 1. Display every channel separately.
 % 2. Build a normalized GRF activity trace from the absolute first
 %    differences across channels.
 % 3. Use only this activity trace for selecting walking intervals.
-%
 % The activity trace is a visualization aid. It is not a vertical-GRF
 % signal and must not be used later for RHS/LHS/RTO/LTO detection.
 grfDifference = [ ...

@@ -1,7 +1,6 @@
 function hide_all_figures()
 % GOAL
 %   Hide and close EEGLAB/BeMoBIL figures during unattended batch processing.
-%
 % METHOD
 %   Disable default figure visibility, expose hidden figure handles, and
 %   close currently open figures without failing the processing stage if a

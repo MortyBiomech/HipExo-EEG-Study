@@ -2,7 +2,6 @@ function rows = session_peer_rows(T, rowIdx)
 % GOAL
 %   Return all imported table rows that belong to the same BIDS subject and
 %   session as one reference row.
-%
 % METHOD
 %   Match BidsSubject and BidsSession and, when DoImport exists, restrict the
 %   peer set to rows with DoImport == 1.

@@ -1,12 +1,10 @@
 % GOAL
 %   Compute descriptive time-warped gait-cycle ERSPs for ROI-specific
 %   cluster representations that passed Step 13 cluster QC.
-%
 % INPUT
 %   Step 13 RHS_ROI_cluster_QC_review.xlsx.
 %   ROI-specific STUDYs from Step 12.
 %   EEGLAB time-frequency measure files when available.
-%
 % APPROACH
 %   1. Read fixed ROI rows whose ROI-specific cluster representation has
 %      ClusterDecision=KEEP and all cluster QC fields PASS.
@@ -24,7 +22,6 @@
 %      gait phases RHS-LTO, LTO-LHS, LHS-RTO, and RTO-nextRHS.
 %   9. Save group-level and subject-level band time-course and band-by-phase
 %      summaries.
-%
 % OUTPUT
 %   04_timewarped_ERSP
 

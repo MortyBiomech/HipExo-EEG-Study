@@ -2,11 +2,9 @@
 %   Run repeated clustering on the shared-ICA components in the RHS STUDY
 %   and identify the best cluster representation for each fixed MNI ROI
 %   target defined before this step.
-%
 % INPUT
 %   Step 11 RHS epoched STUDY.
 %   compatibility/std_preclust.m and compatibility/bemobil_dipoles.m.
-%
 % APPROACH
 %   1. Verify the current shared-ICA STUDY structure.
 %   2. Precompute and precluster scalp, spectrum, and dipole features.
@@ -14,10 +12,8 @@
 %   4. For each fixed ROI target, rank candidate clusters independently.
 %   5. Save the best ROI-specific cluster representation, membership,
 %      figures, and provenance. This step does not redefine the ROI targets.
-%
 % OUTPUT
 %   9_RHS-ERSP-run-separated/03_ROI-repeated-clustering/<run>/*
-%
 % USED BY
 %   step13_rhs_roi_cluster_qc.m
 
@@ -146,12 +142,9 @@ pop_editoptions( ...
 
 
 % INSTALL PROJECT-LOCAL SHARED-ICA COMPATIBILITY FUNCTIONS
-%
 % Fixes:
-%
 %   std_preclust
 %   bemobil_dipoles
-%
 % Original package files are NOT modified.
 
 fprintf('\n============================================================\n');
@@ -282,9 +275,7 @@ if exist(inputStudyPath, 'file') ~= 2
 end
 
 
-%% -------------------------------------------------------------------------
 % Output folders
-% -------------------------------------------------------------------------
 
 clusteringRoot = ...
     fullfile( ...
@@ -460,9 +451,7 @@ else
     fprintf('============================================================\n');
 
 
-    %% ---------------------------------------------------------------------
     % Study design
-    % ---------------------------------------------------------------------
 
     [STUDY, designIndex] = ...
         make_all_condition_design_local( ...
@@ -470,9 +459,7 @@ else
             ALLEEG);
 
 
-    %% ---------------------------------------------------------------------
     % Precompute scalp + spectrum
-    % ---------------------------------------------------------------------
 
     if forceRecomputeMeasureFiles
 
@@ -520,9 +507,7 @@ else
                 'off'});
 
 
-    %% ---------------------------------------------------------------------
     % BeMoBIL precluster
-    % ---------------------------------------------------------------------
 
     fprintf('\nPreparing BeMoBIL preclustering features...\n');
 
@@ -572,9 +557,7 @@ else
         parentCount);
 
 
-    %% ---------------------------------------------------------------------
     % Provenance
-    % ---------------------------------------------------------------------
 
     if ~isfield(STUDY, 'etc') || ...
             isempty(STUDY.etc)
@@ -900,7 +883,6 @@ end
 
 
 % CRITICAL CHECK BEFORE ROI EVALUATION
-%
 % This must resolve to our project-local bemobil_dipoles patch.
 
 activeBemobilDipoles = ...
@@ -969,9 +951,7 @@ figureCleanup = ...
 for roiIndex = 1:height(fixedROITargets)
 
 
-    %% ---------------------------------------------------------------------
     % ROI info
-    % ---------------------------------------------------------------------
 
     roiID = ...
         string( ...
@@ -1077,15 +1057,12 @@ for roiIndex = 1:height(fixedROITargets)
     fprintf('------------------------------------------------------------\n');
 
 
-    %% ---------------------------------------------------------------------
     % Create ROI multivariate data.
-    %
     % This local evaluator keeps the nine BeMoBIL data dimensions, but it:
     %   1. accepts solutions with or without an Outlier cluster;
     %   2. dynamically identifies the K regular clusters;
     %   3. counts real subjects from STUDY.datasetinfo.subject;
     %   4. counts each shared subject/session/IC only once.
-    % ---------------------------------------------------------------------
 
     fprintf( ...
         'Evaluating %d shared clustering solutions for this ROI...\n', ...
@@ -1102,9 +1079,7 @@ for roiIndex = 1:height(fixedROITargets)
             numberOfClusters);
 
 
-    %% ---------------------------------------------------------------------
     % Validate multivariate data
-    % ---------------------------------------------------------------------
 
     if ~isfield( ...
             clusterMultivariateData, ...
@@ -1129,14 +1104,10 @@ for roiIndex = 1:height(fixedROITargets)
     end
 
 
-    %% ---------------------------------------------------------------------
     % Robust ranking
-    %
     % Same six quality measures as BeMoBIL.
-    %
     % pinv is used instead of inv for Mahalanobis covariance because the
     % covariance can be singular in this two-subject pilot.
-    % ---------------------------------------------------------------------
 
     [rankedSolutions, ...
      qualityScores, ...
@@ -1178,9 +1149,7 @@ for roiIndex = 1:height(fixedROITargets)
     end
 
 
-    %% ---------------------------------------------------------------------
     % Save multivariate evaluation
-    % ---------------------------------------------------------------------
 
     save( ...
         evaluationPath, ...
@@ -1193,9 +1162,7 @@ for roiIndex = 1:height(fixedROITargets)
         '-v7.3');
 
 
-    %% ---------------------------------------------------------------------
     % Save diagnostic distribution plot
-    % ---------------------------------------------------------------------
 
     if isgraphics(diagnosticFigure)
 
@@ -1232,9 +1199,7 @@ for roiIndex = 1:height(fixedROITargets)
     end
 
 
-    %% ---------------------------------------------------------------------
     % Create ROI-specific STUDY
-    % ---------------------------------------------------------------------
 
     solutionField = ...
         sprintf( ...
@@ -1265,9 +1230,7 @@ for roiIndex = 1:height(fixedROITargets)
             solutionField);
 
 
-    %% ---------------------------------------------------------------------
     % Compute cluster dipoles using patched bemobil_dipoles
-    % ---------------------------------------------------------------------
 
     STUDYroi = ...
         bemobil_dipoles( ...
@@ -1280,9 +1243,7 @@ for roiIndex = 1:height(fixedROITargets)
         char(safeROILabel);
 
 
-    %% ---------------------------------------------------------------------
     % Store ROI provenance
-    % ---------------------------------------------------------------------
 
     if ~isfield(STUDYroi, 'etc') || ...
             isempty(STUDYroi.etc)
@@ -1363,9 +1324,7 @@ for roiIndex = 1:height(fixedROITargets)
             'yyyy-MM-dd HH:mm:ss'));
 
 
-    %% ---------------------------------------------------------------------
     % Save ROI STUDY
-    % ---------------------------------------------------------------------
 
     [STUDYroi, ROI_ALLEEG] = ...
         pop_savestudy( ...
@@ -1377,9 +1336,7 @@ for roiIndex = 1:height(fixedROITargets)
             roiFolder);
 
 
-    %% ---------------------------------------------------------------------
     % Cluster membership
-    % ---------------------------------------------------------------------
 
     members = ...
         cluster_membership_table_local( ...
@@ -1416,21 +1373,16 @@ for roiIndex = 1:height(fixedROITargets)
             1);
 
 
-    %% ---------------------------------------------------------------------
     % Unique ICA components
-    %
     % Same subject/session/IC appearing in several physical runs is ONE ICA
     % component.
-    % ---------------------------------------------------------------------
 
     uniqueComponentMembers = ...
         unique_ica_component_members_local( ...
             members);
 
 
-    %% ---------------------------------------------------------------------
     % Cluster statistics
-    % ---------------------------------------------------------------------
 
     [clusterCentroid, meanRV] = ...
         cluster_source_statistics_local( ...
@@ -1467,9 +1419,7 @@ for roiIndex = 1:height(fixedROITargets)
                 members.DatasetIndex));
 
 
-    %% ---------------------------------------------------------------------
     % QC figures
-    % ---------------------------------------------------------------------
 
     make_selected_roi_plots_local( ...
         STUDYroi, ...
@@ -1479,9 +1429,7 @@ for roiIndex = 1:height(fixedROITargets)
         safeROILabel);
 
 
-    %% ---------------------------------------------------------------------
     % Summary
-    % ---------------------------------------------------------------------
 
     newSummaryRow = ...
         table( ...
@@ -1560,9 +1508,7 @@ for roiIndex = 1:height(fixedROITargets)
     end
 
 
-    %% ---------------------------------------------------------------------
     % Console output
-    % ---------------------------------------------------------------------
 
     fprintf('\nROI RESULT\n');
 
@@ -1642,9 +1588,7 @@ writetable( ...
     roiDefinitionPath);
 
 
-%% -------------------------------------------------------------------------
 % Run metadata
-% -------------------------------------------------------------------------
 
 runInfo = struct();
 
@@ -2620,9 +2564,7 @@ function [ranked, scores, mahalanobisDistance] = ...
     end
 
 
-    %% ---------------------------------------------------------------------
     % Replace non-finite entries
-    % ---------------------------------------------------------------------
 
     for column = 1:size(data,2)
 
@@ -2654,9 +2596,7 @@ function [ranked, scores, mahalanobisDistance] = ...
     end
 
 
-    %% ---------------------------------------------------------------------
     % Mahalanobis from median
-    % ---------------------------------------------------------------------
 
     distributionMedian = ...
         median( ...
@@ -2685,9 +2625,7 @@ function [ranked, scores, mahalanobisDistance] = ...
             2);
 
 
-    %% ---------------------------------------------------------------------
     % Same quality dimensions used by BeMoBIL
-    % ---------------------------------------------------------------------
 
     measures = [ ...
         data(:,1), ...
@@ -2698,9 +2636,7 @@ function [ranked, scores, mahalanobisDistance] = ...
         mahalanobisDistance];
 
 
-    %% ---------------------------------------------------------------------
     % Normalize
-    % ---------------------------------------------------------------------
 
     for column = 1:size(measures,2)
 
@@ -3113,14 +3049,10 @@ function [setVector, compVector] = ...
         double(compsValue);
 
 
-    %% ---------------------------------------------------------------------
     % Shared ICA representation:
-    %
     % columns = unique ICA components
     % rows    = run-separated datasets sharing that ICA component
-    %
     % NaN padding is allowed.
-    % ---------------------------------------------------------------------
 
     if isvector(compsArray) && ...
             size(setsMatrix,2) == numel(compsArray)
@@ -3216,9 +3148,7 @@ function make_selected_roi_plots_local( ...
         safeROILabel)
 
 
-    %% ---------------------------------------------------------------------
     % Scalp map
-    % ---------------------------------------------------------------------
 
     try
 
@@ -3270,9 +3200,7 @@ function make_selected_roi_plots_local( ...
     end
 
 
-    %% ---------------------------------------------------------------------
     % Dipole plot
-    % ---------------------------------------------------------------------
 
     try
 

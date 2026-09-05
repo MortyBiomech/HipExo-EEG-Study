@@ -2,7 +2,6 @@ function P = project_paths()
 % GOAL
 %   Define all machine- and project-level paths used by the HipExo-EEG
 %   pipeline from one central location.
-%
 % METHOD
 %   Resolve the active scripts root from this file location, derive all
 %   project paths, validate important locations, and add only active

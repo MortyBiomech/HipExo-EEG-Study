@@ -1,16 +1,13 @@
 % GOAL
 %   Detect RHS, RTO, LHS, and LTO for every accepted walking interval in
 %   one batch-selected extracted GRF recording.
-%
 % INPUT
 %   GRF_BATCH_GRF_STREAM_FILE and GRF_BATCH_GRF_OUTPUT_FOLDER supplied
 %   internally by step03_process_subject_grf_eeg.m.
-%
 % OUTPUT
 %   *_GRF_gait_events.mat
 %   *_GRF_gait_events.csv
 %   *_GRF_gait_events_QC*.png
-%
 % METHOD
 %   Call hipexo.detect_GRF_gait_events() for each accepted interval and
 %   preserve the current unattended QC gate and provenance logic.

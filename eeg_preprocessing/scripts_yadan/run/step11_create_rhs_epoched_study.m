@@ -1,11 +1,9 @@
 % GOAL
 %   Build the run-separated RHS EEGLAB STUDY used by ROI clustering and
 %   time-warped ERSP analysis.
-%
 % INPUT
 %   9_RHS-ERSP-run-separated/01_RHS_epoch_manifest.csv
 %   Run-separated RHS epoched datasets from Step 10.
-%
 % APPROACH
 %   1. Read all completed datasets from the Step 10 manifest.
 %   2. Verify dataset identity, shared ICA metadata, selected ICs, DIPFIT,
@@ -13,10 +11,8 @@
 %   3. Build one EEGLAB STUDY while preserving one shared ICA identity per
 %      subject and the physical run number for each dataset.
 %   4. Verify STUDY.datasetinfo.comps against the manifest.
-%
 % OUTPUT
 %   9_RHS-ERSP-run-separated/02_RHS-epoched-STUDY/*
-%
 % USED BY
 %   step12_run_rhs_roi_repeated_clustering.m
 
@@ -143,15 +139,12 @@ end
 
 
 % READ RHS EPOCH MANIFEST
-%
 % IMPORTANT:
 % Explicit CSV parsing + BOM cleaning.
 % Build a stable subject-order index from the current manifest.
 
 
-% ------------------------------------------------
 % Force comma-separated parsing.
-% ------------------------------------------------
 
 opts = detectImportOptions( ...
     manifestFile, ...
@@ -168,9 +161,7 @@ manifest = readtable( ...
     opts);
 
 
-%% ------------------------------------------------
 % Clean header names
-% ------------------------------------------------
 
 variableNames = ...
     string(manifest.Properties.VariableNames);
@@ -217,7 +208,6 @@ end
 
 
 % REQUIRED CORE FIELDS
-%
 % SubjectOrder and ConditionOrder are NOT mandatory here because
 % they can be reconstructed if necessary.
 
@@ -564,7 +554,6 @@ end
 
 
 % VERIFY SHARED SUBJECT-LEVEL ICA
-%
 % All run-separated datasets belonging to one subject MUST have
 % identical ICA weights/sphere/channel indices.
 
@@ -612,7 +601,6 @@ end
 
 
 % BUILD std_editset COMMANDS
-%
 % session = shared ICA identity
 % run     = physical experiment run
 % comps   = fixed final Yes ICs
@@ -686,7 +674,6 @@ studyNotes = [ ...
 
 
 % MAKE ALLEEG METADATA CONSISTENT IN MEMORY
-%
 % No source .set is saved here.
 
 for i = 1:nDatasets
@@ -1106,9 +1093,7 @@ function validate_epoched_dataset_local( ...
         expectedYesICs)
 
 
-    %% ------------------------------------------------------------
     % Epoch structure
-    % ------------------------------------------------------------
 
     if EEG.trials < 2
 
@@ -1118,9 +1103,7 @@ function validate_epoched_dataset_local( ...
     end
 
 
-    %% ------------------------------------------------------------
     % Sampling rate
-    % ------------------------------------------------------------
 
     if abs(double(EEG.srate) - 500) > 1e-6
 
@@ -1131,9 +1114,7 @@ function validate_epoched_dataset_local( ...
     end
 
 
-    %% ------------------------------------------------------------
     % Subject
-    % ------------------------------------------------------------
 
     if ~strcmpi( ...
             strtrim(string(EEG.subject)), ...
@@ -1146,9 +1127,7 @@ function validate_epoched_dataset_local( ...
     end
 
 
-    %% ------------------------------------------------------------
     % Condition
-    % ------------------------------------------------------------
 
     if ~strcmpi( ...
             strtrim(string(EEG.condition)), ...
@@ -1161,9 +1140,7 @@ function validate_epoched_dataset_local( ...
     end
 
 
-    %% ------------------------------------------------------------
     % ICA
-    % ------------------------------------------------------------
 
     if isempty(EEG.icaweights) || ...
             isempty(EEG.icasphere)
@@ -1189,9 +1166,7 @@ function validate_epoched_dataset_local( ...
     end
 
 
-    %% ------------------------------------------------------------
     % DIPFIT
-    % ------------------------------------------------------------
 
     if ~isfield(EEG, 'dipfit') || ...
             ~isfield(EEG.dipfit, 'model') || ...
@@ -1203,9 +1178,7 @@ function validate_epoched_dataset_local( ...
     end
 
 
-    %% ------------------------------------------------------------
     % Yes IC provenance from RHS epoching
-    % ------------------------------------------------------------
 
     if ~isfield(EEG, 'etc') || ...
             ~isfield(EEG.etc, 'rhs_epoching') || ...
@@ -1229,9 +1202,7 @@ function validate_epoched_dataset_local( ...
     end
 
 
-    %% ------------------------------------------------------------
     % Selected IC dipoles
-    % ------------------------------------------------------------
 
     for ic = expectedYesICs(:)'
 
@@ -1253,9 +1224,7 @@ function validate_epoched_dataset_local( ...
     end
 
 
-    %% ------------------------------------------------------------
     % RHS epoch metadata
-    % ------------------------------------------------------------
 
     if ~isfield(EEG.etc, 'rhs_epoching')
 
@@ -1290,9 +1259,7 @@ function validate_epoched_dataset_local( ...
     end
 
 
-    %% ------------------------------------------------------------
     % Timewarp
-    % ------------------------------------------------------------
 
     if ~isfield(EEG, 'timewarp') || ...
             ~isfield( ...
@@ -1648,9 +1615,7 @@ function verify_study_local( ...
     end
 
 
-    %% ------------------------------------------------------------
     % One ICA session per subject
-    % ------------------------------------------------------------
 
     for s = 1:numel(subjectSpecs)
 

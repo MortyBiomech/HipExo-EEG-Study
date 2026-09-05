@@ -2,7 +2,6 @@ function cfg = config_step12_14_clustering_roi_ersp()
 % GOAL
 %   Define parameters for repeated IC clustering around fixed ROI targets,
 %   ROI-specific cluster QC, and gait-cycle time-warped ERSP analysis.
-%
 % METHOD
 %   Store clustering parameters, fixed ROI targets, ROI-cluster QC settings,
 %   ERSP settings, and output names in one configuration.
@@ -45,7 +44,6 @@ cfg.clustering.qualityMeasureWeights = ...
     [3 -1 -1 -1 -2 -1];
 
 %% Fixed ROI targets
-%
 % Identity fields are deliberately separated:
 %   ROIID             stable analysis-target ID used downstream
 %   OriginalClusterID provenance from the exploratory cluster that defined it

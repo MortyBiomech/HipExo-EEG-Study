@@ -1,22 +1,18 @@
 % GOAL
 %   Check the structural and quantitative quality of each subject-level
 %   BeMoBIL preprocessed EEG dataset before AMICA.
-%
 % INPUT
 %   Updated subject_level_EEG_processing_table.csv from Step 05.
 %   Preprocessed .set/.fdt datasets produced by Step 05.
-%
 % APPROACH
 %   1. Select rows enabled by DoQC.
 %   2. Verify preprocessing provenance and expected dataset structure.
 %   3. Check finite data, sampling rate, rank metadata, channel locations,
 %      interpolated-channel count, ZapLine metadata, and residual 50 Hz noise.
 %   4. Save QC status/metrics back to the subject-level processing table.
-%
 % OUTPUT
 %   Updated subject_level_EEG_processing_table.csv
 %   Per-subject preprocessing QC summary/figure outputs.
-%
 % USED BY
 %   step07_run_amica_dipfit_iclabel.m
 
@@ -474,9 +470,7 @@ for rr = 1:length(rowsToCheck)
     end
 
 
-    %% --------------------------------------------------------------------
     %  RESOLVE PROCESSING LABEL
-    %  --------------------------------------------------------------------
 
     if ismember( ...
             'ProcessingSubjectLabel', ...
@@ -517,9 +511,7 @@ for rr = 1:length(rowsToCheck)
     end
 
 
-    %% --------------------------------------------------------------------
     %  RESOLVE PREPROCESSED .SET PATH
-    %  --------------------------------------------------------------------
 
     preprocessedSetPath = ...
         string( ...
@@ -630,9 +622,7 @@ for rr = 1:length(rowsToCheck)
             preprocessedSetPath);
 
 
-    %% --------------------------------------------------------------------
     %  PREPARE QUALITY CHECK OUTPUT FOLDER
-    %  --------------------------------------------------------------------
 
     checkOutputFolder = ...
         fullfile( ...
@@ -664,9 +654,7 @@ for rr = 1:length(rowsToCheck)
             ]);
 
 
-    %% --------------------------------------------------------------------
     %  START DIARY LOG
-    %  --------------------------------------------------------------------
 
     if exist( ...
             summaryFile, ...
@@ -738,9 +726,7 @@ for rr = 1:length(rowsToCheck)
         checkOutputFolder);
 
 
-    %% --------------------------------------------------------------------
     %  LOAD EEG
-    %  --------------------------------------------------------------------
 
     try
 
@@ -783,9 +769,7 @@ for rr = 1:length(rowsToCheck)
     end
 
 
-    %% --------------------------------------------------------------------
     %  BASIC INFORMATION
-    %  --------------------------------------------------------------------
 
     fprintf('============================================================\n');
     fprintf('Basic EEG information\n');
@@ -852,9 +836,7 @@ for rr = 1:length(rowsToCheck)
     % interpolation in EEG.etc.rank. Spherical interpolation makes every
     % reconstructed channel a linear combination of the retained channels,
     % so the expected rank is:
-    %
     %   number of output EEG channels - number of interpolated channels
-    %
     % A direct rank(double(single_precision_data')) call can incorrectly
     % return the full channel count because small single-precision
     % interpolation round-off errors are treated as independent dimensions.
@@ -1000,9 +982,7 @@ for rr = 1:length(rowsToCheck)
         interpolationCountOK);
 
 
-    %% --------------------------------------------------------------------
     %  SOURCE INFORMATION CHECK
-    %  --------------------------------------------------------------------
 
     fprintf('\n============================================================\n');
     fprintf('Source information stored in EEG.etc\n');
@@ -1132,9 +1112,7 @@ for rr = 1:length(rowsToCheck)
     end
 
 
-    %% --------------------------------------------------------------------
     %  ACC CHANNEL CHECK
-    %  --------------------------------------------------------------------
 
     fprintf('\n============================================================\n');
     fprintf('ACC channel check\n');
@@ -1174,9 +1152,7 @@ for rr = 1:length(rowsToCheck)
     end
 
 
-    %% --------------------------------------------------------------------
     %  CHANNEL LOCATION CHECK
-    %  --------------------------------------------------------------------
 
     fprintf('\n============================================================\n');
     fprintf('Channel location check\n');
@@ -1212,9 +1188,7 @@ for rr = 1:length(rowsToCheck)
     end
 
 
-    %% --------------------------------------------------------------------
     %  EVENT CHECK
-    %  --------------------------------------------------------------------
 
     fprintf('\n============================================================\n');
     fprintf('Event check\n');
@@ -1318,9 +1292,7 @@ for rr = 1:length(rowsToCheck)
     end
 
 
-    %% --------------------------------------------------------------------
     %  EXISTING BEMOBIL PREPROCESSING FIGURES CHECK
-    %  --------------------------------------------------------------------
 
     fprintf('\n============================================================\n');
     fprintf('Existing BeMoBIL preprocessing figures\n');
@@ -1381,9 +1353,7 @@ for rr = 1:length(rowsToCheck)
     end
 
 
-    %% --------------------------------------------------------------------
     %  SAVE CHANNEL LOCATION FIGURE
-    %  --------------------------------------------------------------------
 
     fprintf('\n============================================================\n');
     fprintf('Saving electrode location plot\n');
@@ -1443,9 +1413,7 @@ for rr = 1:length(rowsToCheck)
     end
 
 
-    %% --------------------------------------------------------------------
     %  FINAL AUTOMATIC CHECK CONCLUSION
-    %  --------------------------------------------------------------------
 
     fprintf('\n============================================================\n');
     fprintf('Final automatic check conclusion\n');
@@ -1592,9 +1560,7 @@ for rr = 1:length(rowsToCheck)
     diary off;
 
 
-    %% --------------------------------------------------------------------
     %  UPDATE IMPORT TABLE WITH QUALITY CHECK STATUS
-    %  --------------------------------------------------------------------
 
     metadataOK = ...
         hasZaplineMetadata && ...

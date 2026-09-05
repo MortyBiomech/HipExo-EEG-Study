@@ -2,7 +2,6 @@ function label = make_bids_label(rawLabel)
 % GOAL
 %   Convert a raw project label into the compact alphanumeric label format
 %   used by the HipExo-EEG BIDS/session naming rules.
-%
 % METHOD
 %   Split the input into alphanumeric tokens, preserve the first token, and
 %   concatenate later tokens using an uppercase first character.

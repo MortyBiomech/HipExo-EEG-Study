@@ -7,7 +7,6 @@ function [eventTable, diagnostics, qcFigure] = ...
             varargin)
 % GOAL
 %   Detect RHS, RTO, LHS, and LTO from one accepted GRF walking interval.
-%
 % METHOD
 %   Sum right/left force channels, low-pass filter the signals, remove the
 %   low-force baseline, apply hysteresis threshold crossing, enforce contact
