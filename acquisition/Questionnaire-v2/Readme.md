@@ -1,9 +1,9 @@
 # Post-condition questionnaire: what it measures and why
 
 **Study:** HipExo-EEG-Study, Lauflabor Locomotion Lab, TU Darmstadt
-**Instrument:** post-condition questionnaire v3.1
+**Instrument:** post-condition questionnaire v3.4
 **Administered:** on a tablet, immediately after each of the eight walking blocks (No_Exo_Pre, exo-1 to exo-6, No_Exo_Post)
-**Length:** 24 rating items plus 3 open prompts in an exo block, roughly 2 to 3 minutes; 7 rating items plus 2 open prompts in a no-exo block
+**Length:** 25 rating items plus 3 open prompts in an exo block, roughly 2 to 3 minutes; 7 rating items plus 2 open prompts in a no-exo block
 **Status:** in pilot use
 
 ---
@@ -18,7 +18,7 @@
 - **Offline,** the file can be saved and opened directly. Everything works except voice recording.
 - **Data stays on the device.** Answers are held in browser storage and voice clips in IndexedDB on the tablet itself. Nothing is uploaded, and this page has no server behind it. Export the CSV and the audio from the experimenter screen at the end of each session, then clear the device.
 - **To change the instrument,** edit the `CONFIG` block and the `ITEMS` array at the top of the script in `index.html`. Conditions, scale type, randomisation, recording limits and every item's wording live there. Bump `formVersion` with any change to item wording, since that string is written into every exported row and is how a participant's data is later matched to the version they saw.
-- **After pushing a change,** hard-reload the tablet or open the link with a query string such as `?v=3.1`, or the browser will serve the cached previous version.
+- **After pushing a change,** hard-reload the tablet or open the link with a query string such as `?v=3.4`, or the browser will serve the cached previous version.
 
 The rest of this document is the rationale: what each item measures, why it is worded as it is, and the literature it comes from. Section 5 lists the known limitations and open decisions; it is published deliberately rather than kept internal.
 
@@ -35,7 +35,7 @@ The design is organised around one question: **on what basis does a person judge
 **Time is not the binding constraint.** Participants rest for around ten minutes between blocks. The form uses two to three minutes of that. Two other limits do bind:
 
 - *Recency.* Perceived exertion is a state measure that decays as the participant recovers. The Borg items therefore sit on the first page and the form must be started promptly after the bout, not partway through the rest.
-- *Repetition.* The form is answered eight times in one session. Response quality degrades with tedium long before the rest period runs out, and because every item shares a method, a moment and a mood, adding items inflates the correlations between constructs without adding independent information. The instrument was expanded from 19 to 27 items deliberately and stopped there.
+- *Repetition.* The form is answered eight times in one session. Response quality degrades with tedium long before the rest period runs out, and because every item shares a method, a moment and a mood, adding items inflates the correlations between constructs without adding independent information. The instrument was expanded from 19 to 28 items deliberately and stopped there.
 
 **It must discriminate between conditions.** Measures that sit at ceiling in every condition cannot serve as behavioural correlates of the EEG. Several design choices in section 3 exist purely to protect between-condition variance.
 
@@ -46,7 +46,7 @@ The design is organised around one question: **on what basis does a person judge
 | Page | Content | Items (exo) | Items (no-exo) |
 |---|---|---|---|
 | 1 | How hard was it | 2 | 2 |
-| 2 | The support | 5 | — |
+| 2 | What the device did | 6 | — |
 | 3 | You and the device | 9 | — |
 | 4 | How it felt | 5 | 5 |
 | 5 | Overall | 3 | 1 |
@@ -71,19 +71,24 @@ Metabolic cost is the term the exoskeleton field has historically optimised, so 
 > Borg, G. (1998). *Borg's Perceived Exertion and Pain Scales*. Human Kinetics.
 > Sawicki, G. S., Beck, O. N., Kang, I., & Young, A. J. (2020). The exoskeleton expansion: improving walking and running economy. *Journal of NeuroEngineering and Rehabilitation*, 17, 25.
 
-### 2.2 Perception of the support itself (5 items, exo blocks)
+### 2.2 Perception of what the device did (6 items, exo blocks)
 
 | Item | Scale | Role |
 |---|---|---|
-| How much support from the device could you feel? | continuous, none to very strong | manipulation check |
-| The amount of support was | -2 far too little to +2 far too much | signed error |
-| Within each step, the support from the device was | phasic / tonic / could not tell | perceived temporal structure |
-| The timing of the support was | -2 much too early to +2 much too late | signed error, shown only after "phasic" |
-| I could tell in advance when the support would come. | continuous | predictability |
+| Overall, the device (helped / hindered my movements) | -2 strongly worked against to +2 strongly helped | perceived direction |
+| How strongly could you feel the device acting on your legs? | continuous, not at all to very strongly | perceptibility check |
+| The strength of what the device did was | -2 far too weak to +2 far too strong | signed error |
+| Within each step, what the device did was | phasic / tonic / could not tell | perceived temporal structure |
+| The timing of what the device did was | -2 much too early to +2 much too late | signed error, shown only after "phasic" |
+| I could tell in advance when the device would act. | continuous | predictability |
 
 This page is the most direct probe of the cost function and the most novel part of the instrument.
 
-The first item is a manipulation check. Without it, an absence of difference between conditions is uninterpretable, because we could not distinguish "this mode felt no different" from "this mode was not perceived at all".
+The **direction** item, new in v3.4, is the summary judgement of the interaction: did the device work with the person or against them, and how strongly. It is a signed five-point scale rather than a set of labelled categories, because direction and magnitude lie on one ordered dimension with "neither helped nor hindered" as its natural midpoint. An earlier proposal used four categories (helping / assisting / nothing / resisting); "helping" and "assisting" are near-synonyms in English and closer still in German, so participants could not have divided them reliably and the variable would have fragmented.
+
+This is now the primary manipulation check for *direction*, and it is stronger for that purpose than the perceived-benefit item in 2.11, because it asks about the device's action rather than about effort and does not depend on remembering a no-exo block from an hour earlier. It is also the item that should most clearly separate the two resistive modes from the four assistive ones.
+
+The magnitude item that follows checks *perceptibility* and is deliberately unsigned. The two are not redundant: a participant can feel the device acting strongly while being unsure whether it helped or hindered, and that state is itself informative. Comparing the absolute value of the direction rating against the felt magnitude is a consistency check within the block. Without a perceptibility check, an absence of difference between conditions would be uninterpretable, because we could not distinguish "this mode felt no different" from "this mode was not perceived at all".
 
 The amount and timing items are **just-about-right** items, borrowed from sensory and consumer science. They are signed rather than unsigned: they record the *direction* in which the participant would have changed the assistance, not merely how much they liked it. This is what makes them usable as an error term. A mode rated "a little too much" and one rated "a little too little" may earn identical liking scores while implying opposite adjustments.
 
@@ -207,7 +212,7 @@ Discomfort is both an outcome and a confound. It accumulates across a long sessi
 
 These are the dependent variables the other items are meant to explain. The judgement is captured four ways because each has a different failure mode:
 
-- **Valence** is an absolute rating, vulnerable to ceiling effects and to individual differences in scale use.
+- **Valence** is an absolute rating, vulnerable to ceiling effects and to individual differences in scale use. It is one of the few items that needed no change for the resistive conditions: the pleasant-unpleasant axis is direction-neutral, and the negative half is where a resistive mode is expected to land.
 - **Perceived benefit versus no device** is new in v3.0 and fills a real gap: the instrument measured absolute exertion and whether the amount of support was right, but never whether the device made walking easier overall. This is the perceptual counterpart of the metabolic saving and can be compared directly against the calorimetry. Its weakness is that it relies on memory of a no-exo block that may be an hour old, so it should be treated as a coarse comparison.
 - **Comparison with the previous block** is a relative judgement. Comparative judgements are typically more sensitive than absolute ones and remain informative when absolute ratings do not separate, which is the classical result underlying paired-comparison scaling. Chained across the eight blocks these give a preference ordering.
 - **Acceptance** frames the judgement as a decision with a consequence rather than a rating, which tends to sharpen responses. The "no, I would change it" option pairs with the verbal probe that follows.
@@ -220,11 +225,17 @@ These are the dependent variables the other items are meant to explain. The judg
 
 | Prompt | Blocks |
 |---|---|
-| What did you notice about the device during that walk? | every block, reworded for no-exo |
-| If you could change one thing about how it supported you, what would it be? | exo only |
+| What did you notice about the device during that walk? | exo blocks |
+| Before we start with the device: is anything uncomfortable or distracting right now? | No_Exo_Pre only |
+| Now that the device is off again, does anything feel different from before? | No_Exo_Post only |
+| If you could change one thing about how it supported you, what would it be? | exo blocks |
 | How did this walk compare with the previous one? | every block except the first |
 
-Each prompt can be typed or answered by voice; audio is stored on the tablet and transcribed later.
+Each prompt can be typed or answered by voice; audio is stored on the tablet and transcribed later. The first prompt takes three forms, one per block type, and they are not cosmetic variants of one question:
+
+- **In exo blocks** it collects reflections on the interaction, which is the primary purpose of the probe.
+- **In No_Exo_Pre** it collects apparatus discomfort *before the device is introduced*. The participant is already wearing the cap, the EMG sensors and the harness, and may be unused to the treadmill. Anything uncomfortable at that point is present in every subsequent block too. Without this baseline, a later complaint about pressure or distraction first surfaces in an exo block and will be attributed to the exoskeleton by default. The three answers share an `item_id`, so they are one variable in the data file; the block type distinguishes them.
+- **In No_Exo_Post** it collects aftereffects. Changes in how walking feels once the device is removed are of interest in their own right and cannot be asked anywhere else in the protocol.
 
 This replaces the single free-text box in earlier versions and is the largest change in v3.0. It was added after a pilot in which the participant volunteered detailed and specific reflections when asked verbally, and wrote nothing at all in the text box. Verbal report is not a supplement here but the primary channel for anything the fixed scales do not anticipate, and it does not suffer from the scale fatigue that limits how many rating items can be added.
 
@@ -248,9 +259,13 @@ The prompts deliberately do not list examples such as timing, comfort or effort.
 
 **Item order randomisation.** Item order within each page is shuffled using a seed derived from participant ID and block number, so the order is randomised but exactly reproducible, and the realised position of every item is written to the output file. This matters more in v3.0 than before, because page 3 now contains several items measuring the same construct and fixed adjacency would encourage answering by position rather than by content. A gating item and the item it reveals always move together.
 
+**Direction-neutral wording (v3.3).** Two of the six exo conditions are resistive. Every item that previously referred to the device's "support" now refers to what the device *did*, and the magnitude scale runs too weak to too strong rather than too little to too much. This matters for two reasons. Asking how much *support* was felt during a resistive block is either answered as zero, which is true and uninformative, or silently reinterpreted, and there is no way afterwards to tell which happened. It also removes a demand characteristic: describing the device as supportive in every question primes an expectation of help in the two conditions where none is given. The trade-off is that the wording is slightly more cumbersome; that is accepted in exchange for items that mean the same thing in all six conditions.
+
+Direction is not lost by this change. It is captured by the perceived-benefit item in 2.11 (much harder to much easier), which is the item that should separate assistive from resistive modes perceptually, and by the signed strength and timing judgements.
+
 **Conditional items.** The timing question appears only when temporal structure was perceived; device items do not appear in no-exo blocks; the comparison items do not appear in the first block. All of these produce missing-by-design cells, which must be modelled as conditional rather than imputed.
 
-**Why the expansion stopped at 27 items.** The limiting resource is not the rest period but the number of distinct judgements a person can make reliably about one walking bout, repeated eight times. Beyond roughly this point participants begin answering the scale rather than the experience, and because all items share a method, a moment and a mood, further items inflate inter-construct correlations without adding independent information. Each additional dependent variable also adds to the multiple-comparison burden, which with six exo conditions grows faster than the information does.
+**Why the expansion stopped at 28 items.** The limiting resource is not the rest period but the number of distinct judgements a person can make reliably about one walking bout, repeated eight times. Beyond roughly this point participants begin answering the scale rather than the experience, and because all items share a method, a moment and a mood, further items inflate inter-construct correlations without adding independent information. Each additional dependent variable also adds to the multiple-comparison burden, which with six exo conditions grows faster than the information does.
 
 > Couper, M. P., Tourangeau, R., Conrad, F. G., & Singer, E. (2006). Evaluating the effectiveness of visual analog scales. *Social Science Computer Review*, 24(2), 227-245.
 > Reips, U.-D., & Funke, F. (2008). Interval-level measurement with visual analogue scales in internet-based research: VAS Generator. *Behavior Research Methods*, 40(3), 699-704.

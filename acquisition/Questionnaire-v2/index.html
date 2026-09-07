@@ -182,7 +182,7 @@ textarea{width:100%;min-height:88px;border:1px solid var(--card-edge);border-rad
    ================================================================== */
 const CONFIG = {
   study: "HipExo-EEG-Study",
-  formVersion: "post-condition v3.1",
+  formVersion: "post-condition v3.4",
 
   // Condition codes as they appear in your XDF filenames. The participant
   // never sees these; they see "Block 3 of 8" only.
@@ -241,7 +241,7 @@ const UI = {
     doneSub:"Please hand the tablet back to the experimenter.",
     backToSetup:"Back to setup", exportCsv:"Export CSV", exportJson:"Export JSON",
     clear:"Clear all data", answered:"%1 of %2 answered",
-    p1:"How hard was it?", p2:"The support", p3:"You and the device",
+    p1:"How hard was it?", p2:"What the device did", p3:"You and the device",
     p4:"How it felt", p5:"Overall", p6:"In your own words",
     tapLine:"Tap or drag anywhere on the line",
     notAnswered:"Not answered yet",
@@ -265,7 +265,7 @@ const UI = {
     doneSub:"Bitte geben Sie das Tablet zurück.",
     backToSetup:"Zurück zur Versuchsleitung", exportCsv:"CSV exportieren", exportJson:"JSON exportieren",
     clear:"Alle Daten löschen", answered:"%1 von %2 beantwortet",
-    p1:"Wie anstrengend war es?", p2:"Die Unterstützung", p3:"Sie und das Gerät",
+    p1:"Wie anstrengend war es?", p2:"Was das Gerät gemacht hat", p3:"Sie und das Gerät",
     p4:"Wie es sich angefühlt hat", p5:"Insgesamt", p6:"In Ihren eigenen Worten",
     tapLine:"Tippen oder ziehen Sie irgendwo auf der Linie",
     notAnswered:"Noch nicht beantwortet",
@@ -297,21 +297,29 @@ const ITEMS = [
     text:{en:"How hard was your breathing during that walk?",
           de:"Wie stark war Ihre Atmung bei diesem Gehen belastet?"} },
 
-  /* ---- page 2: the support itself, exo blocks only ---- */
+  /* ---- page 2: what the device did, exo blocks only ---- */
   { id:"assist_felt", page:2, when:"exo", type:"vas", construct:"manipulation_check",
-    text:{en:"How much support from the device could you feel?",
-          de:"Wie viel Unterstützung durch das Gerät konnten Sie spüren?"},
-    left:{en:"None at all",de:"Gar keine"}, right:{en:"Very strong",de:"Sehr stark"} },
+    text:{en:"How strongly could you feel the device acting on your legs?",
+          de:"Wie stark konnten Sie spüren, dass das Gerät auf Ihre Beine einwirkt?"},
+    left:{en:"Not at all",de:"Gar nicht"}, right:{en:"Very strongly",de:"Sehr stark"} },
+  { id:"assist_direction", page:2, when:"exo", type:"choice", construct:"perceived_direction",
+    text:{en:"Overall, the device",de:"Insgesamt hat das Gerät meine Bewegungen"},
+    options:[{v:-2,en:"Strongly worked against my movements",de:"Stark behindert"},
+             {v:-1,en:"Slightly worked against my movements",de:"Leicht behindert"},
+             {v:0, en:"Neither helped nor hindered my movements",de:"Weder unterstützt noch behindert"},
+             {v:1, en:"Slightly helped my movements",de:"Leicht unterstützt"},
+             {v:2, en:"Strongly helped my movements",de:"Stark unterstützt"}] },
   { id:"assist_amount", page:2, when:"exo", type:"choice", construct:"amount_judgement",
-    text:{en:"The amount of support was",de:"Die Menge der Unterstützung war"},
-    options:[{v:-2,en:"Far too little",de:"Viel zu wenig"},
-             {v:-1,en:"A little too little",de:"Etwas zu wenig"},
+    text:{en:"The strength of what the device did was",
+          de:"Die Stärke dessen, was das Gerät gemacht hat, war"},
+    options:[{v:-2,en:"Far too weak",de:"Viel zu schwach"},
+             {v:-1,en:"A little too weak",de:"Etwas zu schwach"},
              {v:0, en:"About right",de:"Genau richtig"},
-             {v:1, en:"A little too much",de:"Etwas zu viel"},
-             {v:2, en:"Far too much",de:"Viel zu viel"}] },
+             {v:1, en:"A little too strong",de:"Etwas zu stark"},
+             {v:2, en:"Far too strong",de:"Viel zu stark"}] },
   { id:"assist_pattern", page:2, when:"exo", type:"choice", construct:"assistance_pattern", gates:true,
-    text:{en:"Within each step, the support from the device was",
-          de:"Innerhalb jedes Schrittes war die Unterstützung durch das Gerät"},
+    text:{en:"Within each step, what the device did was",
+          de:"Innerhalb jedes Schrittes war das, was das Gerät gemacht hat,"},
     options:[{v:"phasic", en:"Stronger at certain points in the step",
                           de:"An bestimmten Punkten im Schritt stärker"},
              {v:"tonic",  en:"About the same the whole way through",
@@ -320,15 +328,16 @@ const ITEMS = [
                           de:"Konnte ich nicht sagen"}] },
   { id:"assist_timing", page:2, when:"exo", type:"choice", construct:"timing_judgement",
     dependsOn:{ item:"assist_pattern", values:["phasic"] },
-    text:{en:"The timing of the support was",de:"Der Zeitpunkt der Unterstützung war"},
+    text:{en:"The timing of what the device did was",
+          de:"Der Zeitpunkt dessen, was das Gerät gemacht hat, war"},
     options:[{v:-2,en:"Much too early",de:"Viel zu früh"},
              {v:-1,en:"Slightly early",de:"Etwas zu früh"},
              {v:0, en:"Right on time",de:"Genau richtig"},
              {v:1, en:"Slightly late",de:"Etwas zu spät"},
              {v:2, en:"Much too late",de:"Viel zu spät"}] },
   { id:"predict", page:2, when:"exo", type:"vas", construct:"predictability",
-    text:{en:"I could tell in advance when the support would come.",
-          de:"Ich konnte im Voraus spüren, wann die Unterstützung kommt."},
+    text:{en:"I could tell in advance when the device would act.",
+          de:"Ich konnte im Voraus spüren, wann das Gerät einwirkt."},
     left:{en:"Not at all",de:"Gar nicht"}, right:{en:"Completely",de:"Völlig"} },
 
   /* ---- page 3: the body-device relationship, exo blocks only ---- */
@@ -355,8 +364,8 @@ const ITEMS = [
           de:"Während des Gehens habe ich das Gerät nicht mehr als etwas Separates wahrgenommen."},
     left:{en:"Not at all",de:"Gar nicht"}, right:{en:"Completely",de:"Völlig"} },
   { id:"safe", page:3, when:"exo", type:"vas", construct:"trust",
-    text:{en:"I felt safe letting the device support me.",
-          de:"Ich habe mich sicher gefühlt, mich vom Gerät unterstützen zu lassen."},
+    text:{en:"I felt safe walking with the device.",
+          de:"Ich habe mich beim Gehen mit dem Gerät sicher gefühlt."},
     left:{en:"Not at all",de:"Gar nicht"}, right:{en:"Completely",de:"Völlig"} },
   { id:"trust2", page:3, when:"exo", type:"vas", construct:"trust",
     text:{en:"I trusted the device while I was walking.",
@@ -410,8 +419,8 @@ const ITEMS = [
              {v:1, en:"A bit better",de:"Etwas besser"},
              {v:2, en:"Much better",de:"Viel besser"}] },
   { id:"choose_again", page:5, when:"exo", type:"choice", construct:"acceptance",
-    text:{en:"If you had to keep walking for another 30 minutes, would you want the device to support you exactly the way it just did?",
-          de:"Wenn Sie noch 30 Minuten weitergehen müssten, würden Sie wollen, dass das Gerät Sie genau so unterstützt wie gerade eben?"},
+    text:{en:"If you had to keep walking for another 30 minutes, would you want the device to behave exactly the way it just did?",
+          de:"Wenn Sie noch 30 Minuten weitergehen müssten, würden Sie wollen, dass sich das Gerät genau so verhält wie gerade eben?"},
     wide:true,
     options:[{v:1,en:"Yes, keep it as it is",de:"Ja, genau so"},
              {v:0,en:"Not sure",de:"Unsicher"},
@@ -422,11 +431,23 @@ const ITEMS = [
     text:{en:"What did you notice about the device during that walk?",
           de:"Was ist Ihnen während dieses Gehens am Gerät aufgefallen?"},
     hint:{en:"Anything at all, good or bad.",de:"Alles, was Ihnen aufgefallen ist, positiv wie negativ."},
-    textNoExo:{en:"What did you notice during that walk, without the device?",
-               de:"Was ist Ihnen während dieses Gehens ohne das Gerät aufgefallen?"} },
+    // the two no-exo blocks ask different questions: the first records apparatus
+    // discomfort before the device is introduced, the last records aftereffects
+    textBy:{
+      "No_Exo_Pre":{en:"Before we start with the device: is anything uncomfortable or distracting right now?",
+                    de:"Bevor wir mit dem Gerät anfangen: Ist gerade irgendetwas unbequem oder störend?"},
+      "No_Exo_Post":{en:"Now that the device is off again, does anything feel different from before?",
+                     de:"Jetzt, wo das Gerät wieder ab ist: Fühlt sich irgendetwas anders an als vorher?"}
+    },
+    hintBy:{
+      "No_Exo_Pre":{en:"The cap, the sensors, the straps, the treadmill, anything at all.",
+                    de:"Die Haube, die Sensoren, die Gurte, das Laufband, alles Mögliche."},
+      "No_Exo_Post":{en:"Anything left over from wearing it, or anything about walking that feels changed.",
+                     de:"Alles, was vom Tragen übrig geblieben ist, oder was sich beim Gehen verändert anfühlt."}
+    } },
   { id:"probe_change", page:6, when:"exo", type:"open", construct:"probe_change", optional:true, audio:true,
-    text:{en:"If you could change one thing about how it supported you, what would it be?",
-          de:"Wenn Sie eine Sache an der Unterstützung ändern könnten, was wäre das?"} },
+    text:{en:"If you could change one thing about what the device did, what would it be?",
+          de:"Wenn Sie eine Sache daran ändern könnten, was das Gerät gemacht hat, was wäre das?"} },
   { id:"probe_compare", page:6, when:"all", type:"open", construct:"probe_compare", optional:true, audio:true,
     skipFirstBlock:true,
     text:{en:"How did this walk compare with the previous one?",
@@ -558,10 +579,16 @@ function activePages(){ return [1,2,3,4,5,6].filter(p=>pageItems(p).length>0); }
 function realisedOrder(){ return activePages().reduce((a,p)=>a.concat(pageItems(p).map(i=>i.id)),[]); }
 
 function itemText(it){
-  return (!currentCondition().exo && it.textNoExo) ? it.textNoExo : it.text;
+  const c = currentCondition();
+  if(it.textBy && it.textBy[c.code]) return it.textBy[c.code];
+  if(!c.exo && it.textNoExo) return it.textNoExo;
+  return it.text;
 }
 function itemHint(it){
-  const h = (!currentCondition().exo && it.hintNoExo) ? it.hintNoExo : it.hint;
+  const c = currentCondition();
+  let h = (it.hintBy && it.hintBy[c.code]) ? it.hintBy[c.code]
+        : (!c.exo && it.hintNoExo) ? it.hintNoExo
+        : it.hint;
   return h ? L(h) : "";
 }
 
