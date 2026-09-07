@@ -182,7 +182,7 @@ textarea{width:100%;min-height:88px;border:1px solid var(--card-edge);border-rad
    ================================================================== */
 const CONFIG = {
   study: "HipExo-EEG-Study",
-  formVersion: "post-condition v3.0",
+  formVersion: "post-condition v3.1",
 
   // Condition codes as they appear in your XDF filenames. The participant
   // never sees these; they see "Block 3 of 8" only.
@@ -370,7 +370,7 @@ const ITEMS = [
   { id:"natural", page:4, when:"all", type:"vas", construct:"naturalness",
     text:{en:"The walking felt natural.",de:"Das Gehen fühlte sich natürlich an."},
     left:{en:"Not at all",de:"Gar nicht"}, right:{en:"Completely",de:"Völlig"} },
-  { id:"steady", page:4, when:"all", type:"vas", construct:"balance_confidence",
+  { id:"steady", page:4, when:"all", type:"vas", construct:"perceived_stability",
     text:{en:"I felt steady on my feet.",de:"Ich fühlte mich sicher auf den Beinen."},
     left:{en:"Not at all",de:"Gar nicht"}, right:{en:"Completely",de:"Völlig"} },
   { id:"attention", page:4, when:"all", type:"vas", construct:"mental_effort",
