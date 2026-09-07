@@ -182,10 +182,11 @@ textarea{width:100%;min-height:88px;border:1px solid var(--card-edge);border-rad
    ================================================================== */
 const CONFIG = {
   study: "HipExo-EEG-Study",
-  formVersion: "post-condition v2.1",
+  formVersion: "post-condition v2.7",
 
   // Condition codes as they appear in your XDF filenames. The participant
   // never sees these; they see "Block 3 of 8" only.
+  //
   conditions: [
     { code:"No_Exo_Pre",  exo:false },
     { code:"exo-1",       exo:true  },
@@ -306,7 +307,17 @@ const ITEMS = [
              {v:0, en:"About right",de:"Genau richtig"},
              {v:1, en:"A little too much",de:"Etwas zu viel"},
              {v:2, en:"Far too much",de:"Viel zu viel"}] },
+  { id:"assist_pattern", page:2, when:"exo", type:"choice", construct:"assistance_pattern", gates:true,
+    text:{en:"Within each step, the support from the device was",
+          de:"Innerhalb jedes Schrittes war die Unterstützung durch das Gerät"},
+    options:[{v:"phasic", en:"Stronger at certain points in the step",
+                          de:"An bestimmten Punkten im Schritt stärker"},
+             {v:"tonic",  en:"About the same the whole way through",
+                          de:"Die ganze Zeit über etwa gleich"},
+             {v:"unclear",en:"I could not tell",
+                          de:"Konnte ich nicht sagen"}] },
   { id:"assist_timing", page:2, when:"exo", type:"choice", construct:"timing_judgement",
+    dependsOn:{ item:"assist_pattern", values:["phasic"] },
     text:{en:"The timing of the support was",de:"Der Zeitpunkt der Unterstützung war"},
     options:[{v:-2,en:"Much too early",de:"Viel zu früh"},
              {v:-1,en:"Slightly early",de:"Etwas zu früh"},
@@ -367,14 +378,22 @@ const ITEMS = [
              {v:0, en:"About the same",de:"Ungefähr gleich"},
              {v:1, en:"A bit better",de:"Etwas besser"},
              {v:2, en:"Much better",de:"Viel besser"}] },
-  { id:"choose_again", page:4, when:"all", type:"choice", construct:"acceptance",
-    text:{en:"If you had to walk for 30 minutes now, would you choose this way of walking again?",
-          de:"Wenn Sie jetzt 30 Minuten gehen müssten, würden Sie diese Art zu gehen wieder wählen?"},
+  { id:"choose_again", page:4, when:"exo", type:"choice", construct:"acceptance",
+    text:{en:"If you had to keep walking for another 30 minutes, would you want the device to support you exactly the way it just did?",
+          de:"Wenn Sie noch 30 Minuten weitergehen müssten, würden Sie wollen, dass das Gerät Sie genau so unterstützt wie gerade eben?"},
     wide:true,
-    options:[{v:1,en:"Yes",de:"Ja"},{v:0,en:"Not sure",de:"Unsicher"},{v:-1,en:"No",de:"Nein"}] },
+    options:[{v:1,en:"Yes, keep it as it is",de:"Ja, genau so"},
+             {v:0,en:"Not sure",de:"Unsicher"},
+             {v:-1,en:"No, I would change it",de:"Nein, ich würde etwas ändern"}] },
   { id:"comment", page:4, when:"all", type:"open", construct:"free_comment", optional:true, audio:true,
-    text:{en:"How did that way of walking feel to you? Write it, or record yourself talking.",
-          de:"Wie hat sich dieses Gehen für Sie angefühlt? Schreiben Sie es auf, oder nehmen Sie sich beim Sprechen auf."} }
+    text:{en:"Tell us what it was like to walk with the device just now.",
+          de:"Erzählen Sie uns, wie es war, gerade eben mit dem Gerät zu gehen."},
+    hint:{en:"Anything you noticed about how the device and your body worked together, good or bad.",
+          de:"Alles, was Ihnen aufgefallen ist, wie das Gerät und Ihr Körper zusammengespielt haben, positiv wie negativ."},
+    textNoExo:{en:"Tell us what the walking was like just now, without the device.",
+               de:"Erzählen Sie uns, wie das Gehen gerade eben ohne das Gerät war."},
+    hintNoExo:{en:"Anything you noticed, good or bad.",
+               de:"Alles, was Ihnen aufgefallen ist, positiv wie negativ."} }
 ];
 
 /* ==================================================================
@@ -468,11 +487,16 @@ function shuffle(arr, rand){ const a=arr.slice(); for(let i=a.length-1;i>0;i--){
 
 function currentCondition(){ return CONFIG.conditions.find(c=>c.code===state.meta.cond) || CONFIG.conditions[0]; }
 
+function visible(it){
+  if(!it.dependsOn) return true;
+  return it.dependsOn.values.indexOf(state.answers[it.dependsOn.item]) >= 0;
+}
 function activeItems(){
   const exo = currentCondition().exo;
   return ITEMS.filter(it=>{
     if(it.when==="exo" && !exo) return false;
     if(it.skipFirstBlock && Number(state.meta.block)<=1) return false;
+    if(!visible(it)) return false;
     return true;
   });
 }
@@ -480,13 +504,29 @@ function pageItems(p){
   const items = activeItems().filter(it=>it.page===p);
   if(!CONFIG.randomiseItems) return items;
   // free-text and the comparison item stay last; the rest are shuffled
-  const fixed = items.filter(it=>it.type==="text");
-  const movable = items.filter(it=>it.type!=="text");
+  const isOpenEnded = it => it.type==="text" || it.type==="open";
+  const fixed = items.filter(isOpenEnded);
+  const movable = items.filter(it=>!isOpenEnded(it));
+  // a gating question and whatever it reveals move together, so a dependent
+  // item can never be shuffled above the question that unlocks it
+  const units = [];
+  movable.forEach(it=>{
+    const u = it.dependsOn && units.find(g=>g[0].id===it.dependsOn.item);
+    if(u) u.push(it); else units.push([it]);
+  });
   const r = rng(hash(state.meta.pid+"|"+state.meta.block+"|p"+p));
-  return shuffle(movable,r).concat(fixed);
+  return shuffle(units,r).reduce((a,u)=>a.concat(u),[]).concat(fixed);
 }
 function activePages(){ return [1,2,3,4].filter(p=>pageItems(p).length>0); }
 function realisedOrder(){ return activePages().reduce((a,p)=>a.concat(pageItems(p).map(i=>i.id)),[]); }
+
+function itemText(it){
+  return (!currentCondition().exo && it.textNoExo) ? it.textNoExo : it.text;
+}
+function itemHint(it){
+  const h = (!currentCondition().exo && it.hintNoExo) ? it.hintNoExo : it.hint;
+  return h ? L(h) : "";
+}
 
 function isAnswered(it){
   if(it.optional) return true;
@@ -525,7 +565,7 @@ function buildVAS(item, card, bipolar, owner){
   line.setAttribute("role","slider");
   line.setAttribute("aria-valuemin", bipolar ? -50 : 0);
   line.setAttribute("aria-valuemax", bipolar ? 50 : 100);
-  line.setAttribute("aria-label", L(item.text));
+  line.setAttribute("aria-label", L(itemText(item)));
 
   const ends = el("div","vas-ends");
   ends.appendChild(el("span", null, L(item.left)));
@@ -586,6 +626,12 @@ function buildChoice(item, card){
       state.answers[item.id]=o.v; mark(item.id);
       [...box.children].forEach(c=>c.setAttribute("aria-checked","false"));
       b.setAttribute("aria-checked","true");
+      if(item.gates){
+        ITEMS.filter(x=>x.dependsOn && x.dependsOn.item===item.id)
+             .forEach(x=>{ if(x.dependsOn.values.indexOf(o.v)<0) delete state.answers[x.id]; });
+        rebuild();
+        return;
+      }
       refreshCard(item,card);
     };
     box.appendChild(b);
@@ -955,7 +1001,9 @@ function renderQuestions(){
 
   items.forEach(item=>{
     const card = el("div","q");
-    card.appendChild(el("div","q-text", L(item.text)));
+    card.appendChild(el("div","q-text", L(itemText(item))));
+    const hint = itemHint(item);
+    if(hint) card.appendChild(el("div","q-hint", hint));
     let ctrl;
     if(item.type==="borg") ctrl = buildBorg(item, card);
     else if(item.type==="vas") ctrl = buildVAS(item, card, false);
