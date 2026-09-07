@@ -1,7 +1,7 @@
 # Post-condition questionnaire: what it measures and why
 
 **Study:** HipExo-EEG-Study, Lauflabor Locomotion Lab, TU Darmstadt
-**Instrument:** post-condition questionnaire v3.0
+**Instrument:** post-condition questionnaire v3.1
 **Administered:** on a tablet, immediately after each of the eight walking blocks (No_Exo_Pre, exo-1 to exo-6, No_Exo_Post)
 **Length:** 24 rating items plus 3 open prompts in an exo block, roughly 2 to 3 minutes; 7 rating items plus 2 open prompts in a no-exo block
 **Status:** in pilot use
@@ -18,7 +18,7 @@
 - **Offline,** the file can be saved and opened directly. Everything works except voice recording.
 - **Data stays on the device.** Answers are held in browser storage and voice clips in IndexedDB on the tablet itself. Nothing is uploaded, and this page has no server behind it. Export the CSV and the audio from the experimenter screen at the end of each session, then clear the device.
 - **To change the instrument,** edit the `CONFIG` block and the `ITEMS` array at the top of the script in `index.html`. Conditions, scale type, randomisation, recording limits and every item's wording live there. Bump `formVersion` with any change to item wording, since that string is written into every exported row and is how a participant's data is later matched to the version they saw.
-- **After pushing a change,** hard-reload the tablet or open the link with a query string such as `?v=3.0`, or the browser will serve the cached previous version.
+- **After pushing a change,** hard-reload the tablet or open the link with a query string such as `?v=3.1`, or the browser will serve the cached previous version.
 
 The rest of this document is the rationale: what each item measures, why it is worded as it is, and the literature it comes from. Section 5 lists the known limitations and open decisions; it is published deliberately rather than kept internal.
 
@@ -162,13 +162,19 @@ Deviation from habitual gait. Asked in every block so the no-exo blocks provide 
 ### 2.8 Perceived stability (1 item, every block) — new in v3.0
 
 > I felt steady on my feet.
+> *(construct label in the data file: `perceived_stability`)*
 
-Balance confidence during the bout. Added in v3.0 because it is arguably a *stronger* candidate term in the cost function than metabolic cost: people weight fall risk heavily, and a hip device acts directly on pelvis and trunk control.
+The felt sense of security on one's feet during the bout. Added in v3.0 because it is arguably a *stronger* candidate term in the cost function than metabolic cost: people weight fall risk heavily, and a hip device acts directly on pelvis and trunk control.
 
-It is deliberately separate from the safety item in 2.5. Trusting the device is not the same as feeling secure on one's own feet, and the two can dissociate. Asked in every block so the no-exo blocks anchor the scale.
+**This is a percept, not a measurement of stability, and the two can dissociate in both directions.** A device may reduce the margin of stability while feeling reassuring because it supports the pelvis, or improve it while feeling precarious because the assistance arrives at an unexpected moment. That dissociation is the point of including the item: mechanical stability is computed independently from the GRF and IMU streams (margin of stability, step width variability, trunk acceleration variability), and crossing the two is more informative than either alone. What a person optimises is presumably the felt quantity rather than the mechanical one.
 
-> Powell, L. E., & Myers, A. M. (1995). The Activities-specific Balance Confidence (ABC) Scale. *Journals of Gerontology Series A*, 50A(1), M28-M34.
-> Tinetti, M. E., Richman, D., & Powell, L. (1990). Falls efficacy as a measure of fear of falling. *Journal of Gerontology*, 45(6), P239-P243.
+It is also deliberately separate from the safety item in 2.5. Trusting the device is not the same as feeling secure on one's own feet. Asked in every block so the no-exo blocks anchor the scale.
+
+Two caveats on the wording. The English phrase fuses "not wobbling" with "not feeling at risk"; the fusion is accepted here because the global sense of security is what would enter a cost function, but the item should not be reported as a clean measure of either component. And the item is *adapted from* the balance-confidence literature rather than taken from it: the ABC scale measures confidence about hypothetical future activities and is closer to a trait, whereas this is a state judgement about the bout just completed. It should not be described as an ABC item.
+
+> Hof, A. L., Gazendam, M. G. J., & Sinke, W. E. (2005). The condition for dynamic stability. *Journal of Biomechanics*, 38(1), 1-8.
+> Powell, L. E., & Myers, A. M. (1995). The Activities-specific Balance Confidence (ABC) Scale. *Journals of Gerontology Series A*, 50A(1), M28-M34. (source of the construct, not of the item)
+> Adkin, A. L., & Carpenter, M. G. (2018). New insights on emotional contributions to human postural control. *Frontiers in Neurology*, 9, 789.
 
 ### 2.9 Attentional demand (1 item, every block)
 
@@ -265,6 +271,6 @@ Long-format CSV, one row per item, carrying participant ID, block number, condit
 1. **Two constructs remain single-item.** Attentional demand and perceived stability are each measured with one item, as are restriction and naturalness. For attentional demand this is deliberate, for the reason in section 2.9. For perceived stability it is provisional: if the pilots show it separating conditions, it is the next candidate for expansion.
 2. **Internal consistency has not yet been estimated.** Agency, embodiment and trust now have enough items to compute it, but this requires pilot data. The scales should be reported as short-form proxies until that is done, not as validated instruments.
 3. **The verbal probe changes the analysis workload.** Three recordings per block across eight blocks is 24 clips per participant. Transcription and coding need a plan, including who codes, whether a second coder assesses reliability, and how the qualitative themes will be related to the rating scales.
-4. **German translation.** The German wording is a working translation and has not been back-translated. Published German versions exist for Borg and should be substituted before running German-speaking participants.
+4. **German translation.** The German wording is a working translation and has not been back-translated. Published German versions exist for Borg and should be substituted before running German-speaking participants. One item needs attention specifically: the German rendering of "I felt steady on my feet" uses *sicher*, which carries both "safe" and "steady" and therefore blurs the distinction from the safety item in 2.5 that the English keeps apart. A native speaker should choose between alternatives such as *Ich hatte einen sicheren Stand* and *Ich fühlte mich beim Gehen stabil*.
 5. **Ethics amendment for audio.** Voice recordings are personal data and are far less deidentifiable than Likert responses. Capture, storage, transcription and deletion must be covered by the approval and the consent form before further use. Recording can be disabled in the form's configuration in the meantime.
 6. **Sample size for the questionnaire side.** The comparative and acceptance items give ordinal data with eight observations per participant. The number of participants needed to fit a preference model is a separate calculation from the EEG power analysis and has not yet been done.
