@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Post-condition questionnaire</title>
+<style>
+/* ------------------------------------------------------------------
+   No external requests anywhere in this file. It runs offline.
+   ------------------------------------------------------------------ */
+:root{
+  --paper:#E9E7E1;         /* room tone, less glare than white under lab lights */
+  --card:#FBFAF7;
+  --card-edge:#D6D2C8;
+  --ink:#232B32;           /* text */
+  --ink-soft:#67707A;
+  --ink-faint:#9BA3AB;
+  --mark:#0F6E5C;          /* the one accent: an answer has been given */
+  --mark-soft:#DCEAE5;
+  --open:#C08A2E;          /* still unanswered */
+  --alert:#9B3A2C;
+  --r:10px;
+  --tap:52px;              /* minimum comfortable target with sweaty hands */
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{
+  font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,Roboto,"Helvetica Neue",Arial,sans-serif;
+  background:var(--paper); color:var(--ink);
+  font-size:17px; line-height:1.45;
+  -webkit-font-smoothing:antialiased;
+  overscroll-behavior:none;
+}
+button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--mark);outline-offset:2px}
+
+/* layout ---------------------------------------------------------- */
+#app{max-width:760px;margin:0 auto;min-height:100%;display:flex;flex-direction:column}
+.rail{height:4px;background:var(--card-edge);flex:none}
+.rail>i{display:block;height:100%;background:var(--mark);width:0;transition:width .25s ease}
+.scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:18px 18px 130px}
+.bar{
+  position:fixed;left:0;right:0;bottom:0;background:var(--paper);
+  border-top:1px solid var(--card-edge);padding:12px 18px calc(12px + env(safe-area-inset-bottom));
+  display:flex;gap:12px;align-items:center;justify-content:space-between;
+}
+.bar-in{max-width:760px;margin:0 auto;width:100%;display:flex;gap:12px;align-items:center}
+
+/* typography ------------------------------------------------------ */
+h1{font-size:26px;font-weight:600;letter-spacing:-.01em;margin-bottom:4px}
+h2{font-size:15px;font-weight:600;color:var(--ink-soft);margin:0 0 14px}
+.lede{color:var(--ink-soft);font-size:15px;margin-bottom:20px;max-width:60ch}
+
+/* question card --------------------------------------------------- */
+.q{
+  background:var(--card);border:1px solid var(--card-edge);border-radius:var(--r);
+  padding:18px 18px 20px;margin-bottom:14px;position:relative;
+  border-left:4px solid var(--open);
+}
+.q.done{border-left-color:var(--mark)}
+.q-text{font-size:20px;line-height:1.35;font-weight:500;margin-bottom:16px;max-width:44ch}
+.q-hint{font-size:14px;color:var(--ink-faint);margin-top:-10px;margin-bottom:14px}
+
+/* visual analogue line -------------------------------------------- */
+.vas{padding:6px 0 2px;touch-action:none;cursor:pointer}
+.vas-line{position:relative;height:var(--tap);display:flex;align-items:center}
+.vas-line::before{
+  content:"";position:absolute;left:0;right:0;height:6px;border-radius:3px;
+  background:#DFDCD4;
+}
+.vas-fill{position:absolute;left:0;height:6px;border-radius:3px;background:var(--mark-soft);width:0}
+.vas-mid{position:absolute;left:50%;width:1px;height:16px;background:var(--card-edge)}
+.vas-thumb{
+  position:absolute;width:34px;height:34px;border-radius:50%;background:var(--mark);
+  border:3px solid var(--card);box-shadow:0 1px 4px rgba(0,0,0,.28);
+  transform:translateX(-17px);display:none
+}
+.vas.touched .vas-thumb{display:block}
+.vas-ends{display:flex;justify-content:space-between;gap:14px;margin-top:2px}
+.vas-ends span{font-size:14px;color:var(--ink-soft);max-width:14ch;line-height:1.25}
+.vas-ends span:last-child{text-align:right}
+.vas-untouched{font-size:14px;color:var(--open);margin-top:6px}
+.vas.touched .vas-untouched{display:none}
+
+/* choice rows ----------------------------------------------------- */
+.choices{display:flex;flex-direction:column;gap:8px}
+.choices.wide{flex-direction:row;flex-wrap:wrap}
+.opt{
+  min-height:var(--tap);border:1px solid var(--card-edge);background:#fff;
+  border-radius:8px;padding:12px 16px;text-align:left;cursor:pointer;
+  display:flex;align-items:center;gap:12px;flex:1
+}
+.opt:active{background:#F1EFE9}
+.opt[aria-checked="true"]{border-color:var(--mark);background:var(--mark-soft);font-weight:600}
+.opt .dot{width:18px;height:18px;border-radius:50%;border:2px solid var(--ink-faint);flex:none}
+.opt[aria-checked="true"] .dot{border-color:var(--mark);background:var(--mark);box-shadow:inset 0 0 0 3px var(--mark-soft)}
+
+/* borg ladder ----------------------------------------------------- */
+.ladder{display:flex;flex-direction:column-reverse;gap:4px}
+.rung{
+  min-height:46px;display:flex;align-items:center;gap:14px;padding:6px 14px;
+  border:1px solid transparent;border-radius:8px;background:#fff;cursor:pointer;text-align:left
+}
+.rung:nth-child(odd){background:#F6F4EF}
+.rung[aria-checked="true"]{background:var(--mark);color:#fff;border-color:var(--mark)}
+.rung b{font-variant-numeric:tabular-nums;min-width:34px;font-weight:600;font-size:19px}
+.rung span{font-size:16px;color:var(--ink-soft)}
+.rung[aria-checked="true"] span{color:#EAF3F0}
+
+/* chips ----------------------------------------------------------- */
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.chip{
+  min-height:44px;padding:8px 16px;border-radius:22px;border:1px solid var(--card-edge);
+  background:#fff;cursor:pointer;font-size:16px
+}
+.chip[aria-pressed="true"]{border-color:var(--mark);background:var(--mark-soft);color:var(--mark);font-weight:600}
+
+/* buttons --------------------------------------------------------- */
+.btn{
+  min-height:var(--tap);padding:12px 26px;border-radius:8px;border:1px solid var(--card-edge);
+  background:#fff;cursor:pointer;font-weight:600
+}
+.btn.primary{background:var(--mark);border-color:var(--mark);color:#fff}
+.btn.quiet{background:transparent;border-color:transparent;color:var(--ink-soft);padding-left:6px;padding-right:6px}
+.btn.danger{background:#fff;border-color:var(--alert);color:var(--alert)}
+.btn:disabled{opacity:.4;cursor:default}
+.spacer{flex:1}
+.count{font-size:14px;color:var(--ink-soft);font-variant-numeric:tabular-nums}
+
+/* experimenter panel ---------------------------------------------- */
+.setup{background:var(--card);border:1px solid var(--card-edge);border-radius:var(--r);padding:20px;margin-bottom:14px}
+.setup h2{margin-bottom:16px}
+.field{margin-bottom:16px}
+.field label{display:block;font-size:14px;color:var(--ink-soft);margin-bottom:6px;font-weight:600}
+.field input,.field select{
+  width:100%;min-height:var(--tap);border:1px solid var(--card-edge);border-radius:8px;
+  padding:10px 14px;background:#fff
+}
+.row{display:flex;gap:14px;flex-wrap:wrap}
+.row>.field{flex:1;min-width:170px}
+.tbl{width:100%;border-collapse:collapse;font-size:15px;margin-top:8px}
+.tbl th{text-align:left;font-size:13px;color:var(--ink-soft);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--card-edge)}
+.tbl td{padding:8px;border-bottom:1px solid #EDEAE3;font-variant-numeric:tabular-nums}
+.warn{background:#FBF1E3;border:1px solid #E4CB9B;border-radius:8px;padding:12px 14px;font-size:14px;margin-bottom:14px}
+.note{font-size:14px;color:var(--ink-soft);margin-top:10px}
+.big-ok{font-size:22px;font-weight:600;margin-bottom:8px}
+textarea{width:100%;min-height:88px;border:1px solid var(--card-edge);border-radius:8px;padding:12px 14px;background:#fff;resize:none}
+.langsw{display:flex;gap:6px}
+.langsw button{padding:8px 14px;border-radius:6px;border:1px solid var(--card-edge);background:#fff;cursor:pointer;font-size:14px}
+.langsw button[aria-pressed="true"]{background:var(--ink);color:#fff;border-color:var(--ink)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media (max-width:520px){ .q-text{font-size:18px} h1{font-size:22px} }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="rail"><i id="rail"></i></div>
+  <div class="scroll" id="scroll"></div>
+</div>
+<div class="bar"><div class="bar-in" id="bar"></div></div>
+
+<script>
+"use strict";
+
+/* ==================================================================
+   1. CONFIGURATION - everything you are likely to change lives here
+   ================================================================== */
+const CONFIG = {
+  study: "HipExo-EEG-Study",
+  formVersion: "post-condition v2.0",
+
+  // Condition codes as they appear in your XDF filenames. The participant
+  // never sees these; they see "Block 3 of 8" only.
+  conditions: [
+    { code:"No_Exo_Pre",  exo:false },
+    { code:"exo-1",       exo:true  },
+    { code:"exo-2",       exo:true  },
+    { code:"exo-3",       exo:true  },
+    { code:"exo-4",       exo:true  },
+    { code:"exo-5",       exo:true  },
+    { code:"exo-6",       exo:true  },
+    { code:"No_Exo_Post", exo:false }
+  ],
+
+  effortScale: "CR10",      // "CR10" (Borg category-ratio) or "RPE" (Borg 6-20)
+  randomiseItems: true,     // shuffle item order within each page, seeded per participant+block
+  showSliderNumber: false,  // keep false: a visible number invites arithmetic consistency with the last block
+  requireAll: true,         // block Next until every item on the page is answered
+  language: "en"            // starting language; participant can switch
+};
+
+/* ==================================================================
+   2. SCALES
+   ================================================================== */
+const BORG = {
+  CR10: {
+    values:[0,0.5,1,2,3,4,5,6,7,8,9,10],
+    anchors:{
+      en:{0:"Nothing at all",0.5:"Extremely weak",1:"Very weak",2:"Weak",3:"Moderate",
+          4:"Somewhat strong",5:"Strong",6:"",7:"Very strong",8:"",9:"",10:"Extremely strong (maximal)"},
+      de:{0:"Überhaupt nicht",0.5:"Extrem schwach",1:"Sehr schwach",2:"Schwach",3:"Mäßig",
+          4:"Etwas stark",5:"Stark",6:"",7:"Sehr stark",8:"",9:"",10:"Extrem stark (maximal)"}
+    }
+  },
+  RPE: {
+    values:[6,7,8,9,10,11,12,13,14,15,16,17,18,19,20],
+    anchors:{
+      en:{6:"No exertion at all",7:"Extremely light",8:"",9:"Very light",10:"",11:"Light",12:"",
+          13:"Somewhat hard",14:"",15:"Hard (heavy)",16:"",17:"Very hard",18:"",19:"Extremely hard",20:"Maximal exertion"},
+      de:{6:"Überhaupt keine Anstrengung",7:"Extrem leicht",8:"",9:"Sehr leicht",10:"",11:"Leicht",12:"",
+          13:"Etwas anstrengend",14:"",15:"Anstrengend (schwer)",16:"",17:"Sehr anstrengend",18:"",19:"Extrem anstrengend",20:"Maximale Anstrengung"}
+    }
+  }
+};
+
+const UI = {
+  en:{
+    setup:"Experimenter setup", pid:"Participant ID", block:"Block number",
+    cond:"Condition (hidden from participant)", xdf:"XDF file name (optional)",
+    start:"Hand over to participant", blockOf:"Block %1 of %2",
+    next:"Next", back:"Back", finish:"Finish", done:"Thank you.",
+    doneSub:"Please hand the tablet back to the experimenter.",
+    backToSetup:"Back to setup", exportCsv:"Export CSV", exportJson:"Export JSON",
+    clear:"Clear all data", answered:"%1 of %2 answered",
+    p1:"How hard was it?", p2:"The device", p3:"How it felt", p4:"Comparing",
+    tapLine:"Tap or drag anywhere on the line",
+    notAnswered:"Not answered yet",
+    unanswered:"Please answer every question before continuing.",
+    saveWarn:"This browser is not storing answers locally. Do not close the tab before exporting.",
+    collected:"Collected so far", noRows:"No completed blocks yet.",
+    confirmClear:"Delete all stored answers for every participant? Export first.",
+    optional:"Optional"
+  },
+  de:{
+    setup:"Versuchsleitung", pid:"Teilnehmer-ID", block:"Blocknummer",
+    cond:"Bedingung (für Teilnehmende nicht sichtbar)", xdf:"XDF-Dateiname (optional)",
+    start:"An Teilnehmende übergeben", blockOf:"Abschnitt %1 von %2",
+    next:"Weiter", back:"Zurück", finish:"Fertig", done:"Vielen Dank.",
+    doneSub:"Bitte geben Sie das Tablet zurück.",
+    backToSetup:"Zurück zur Versuchsleitung", exportCsv:"CSV exportieren", exportJson:"JSON exportieren",
+    clear:"Alle Daten löschen", answered:"%1 von %2 beantwortet",
+    p1:"Wie anstrengend war es?", p2:"Das Gerät", p3:"Wie es sich angefühlt hat", p4:"Im Vergleich",
+    tapLine:"Tippen oder ziehen Sie irgendwo auf der Linie",
+    notAnswered:"Noch nicht beantwortet",
+    unanswered:"Bitte beantworten Sie alle Fragen, bevor Sie fortfahren.",
+    saveWarn:"Dieser Browser speichert die Antworten nicht lokal. Bitte vor dem Schließen exportieren.",
+    collected:"Bisher erfasst", noRows:"Noch keine abgeschlossenen Abschnitte.",
+    confirmClear:"Alle gespeicherten Antworten löschen? Vorher exportieren.",
+    optional:"Optional"
+  }
+};
+
+/* ==================================================================
+   3. ITEM BANK
+   type: borg | vas | bipolar | choice | discomfort | text
+   when: "all" | "exo"        page: 1..4
+   ================================================================== */
+const ITEMS = [
+  /* ---- page 1: exertion, asked identically in every block ---- */
+  { id:"borg_legs", page:1, when:"all", type:"borg", construct:"exertion_legs",
+    text:{en:"How hard did your legs work during that walk?",
+          de:"Wie stark haben Ihre Beine bei diesem Gehen gearbeitet?"} },
+  { id:"borg_breath", page:1, when:"all", type:"borg", construct:"exertion_breath",
+    text:{en:"How hard was your breathing during that walk?",
+          de:"Wie stark war Ihre Atmung bei diesem Gehen belastet?"} },
+
+  /* ---- page 2: the device, exo blocks only ---- */
+  { id:"assist_felt", page:2, when:"exo", type:"vas", construct:"manipulation_check",
+    text:{en:"How much support from the device could you feel?",
+          de:"Wie viel Unterstützung durch das Gerät konnten Sie spüren?"},
+    left:{en:"None at all",de:"Gar keine"}, right:{en:"Very strong",de:"Sehr stark"} },
+  { id:"assist_amount", page:2, when:"exo", type:"choice", construct:"amount_judgement",
+    text:{en:"The amount of support was",de:"Die Menge der Unterstützung war"},
+    options:[{v:-2,en:"Far too little",de:"Viel zu wenig"},
+             {v:-1,en:"A little too little",de:"Etwas zu wenig"},
+             {v:0, en:"About right",de:"Genau richtig"},
+             {v:1, en:"A little too much",de:"Etwas zu viel"},
+             {v:2, en:"Far too much",de:"Viel zu viel"}] },
+  { id:"assist_timing", page:2, when:"exo", type:"choice", construct:"timing_judgement",
+    text:{en:"The timing of the support was",de:"Der Zeitpunkt der Unterstützung war"},
+    options:[{v:-2,en:"Much too early",de:"Viel zu früh"},
+             {v:-1,en:"Slightly early",de:"Etwas zu früh"},
+             {v:0, en:"Right on time",de:"Genau richtig"},
+             {v:1, en:"Slightly late",de:"Etwas zu spät"},
+             {v:2, en:"Much too late",de:"Viel zu spät"}] },
+  { id:"predict", page:2, when:"exo", type:"vas", construct:"predictability",
+    text:{en:"I could tell in advance when the support would come.",
+          de:"Ich konnte im Voraus spüren, wann die Unterstützung kommt."},
+    left:{en:"Not at all",de:"Gar nicht"}, right:{en:"Completely",de:"Völlig"} },
+  { id:"agency", page:2, when:"exo", type:"vas", construct:"agency",
+    text:{en:"I decided how my legs moved.",de:"Ich habe selbst bestimmt, wie sich meine Beine bewegt haben."},
+    left:{en:"Not at all",de:"Gar nicht"}, right:{en:"Completely",de:"Völlig"} },
+  { id:"agency_ctrl", page:2, when:"exo", type:"vas", construct:"agency_control_item",
+    text:{en:"My legs were moved by something other than me.",
+          de:"Meine Beine wurden von etwas anderem als mir bewegt."},
+    left:{en:"Not at all",de:"Gar nicht"}, right:{en:"Completely",de:"Völlig"} },
+  { id:"embody", page:2, when:"exo", type:"vas", construct:"embodiment",
+    text:{en:"The device felt like a part of my body.",de:"Das Gerät fühlte sich wie ein Teil meines Körpers an."},
+    left:{en:"Not at all",de:"Gar nicht"}, right:{en:"Completely",de:"Völlig"} },
+  { id:"safe", page:2, when:"exo", type:"vas", construct:"trust_safety",
+    text:{en:"I felt safe letting the device support me.",
+          de:"Ich habe mich sicher gefühlt, mich vom Gerät unterstützen zu lassen."},
+    left:{en:"Not at all",de:"Gar nicht"}, right:{en:"Completely",de:"Völlig"} },
+  { id:"restricted", page:2, when:"exo", type:"vas", construct:"restriction",
+    text:{en:"I felt restricted in how I could move.",de:"Ich fühlte mich in meiner Bewegung eingeschränkt."},
+    left:{en:"Not at all",de:"Gar nicht"}, right:{en:"Completely",de:"Völlig"} },
+
+  /* ---- page 3: subjective experience, every block ---- */
+  { id:"natural", page:3, when:"all", type:"vas", construct:"naturalness",
+    text:{en:"The walking felt natural.",de:"Das Gehen fühlte sich natürlich an."},
+    left:{en:"Not at all",de:"Gar nicht"}, right:{en:"Completely",de:"Völlig"} },
+  { id:"attention", page:3, when:"all", type:"vas", construct:"mental_effort",
+    text:{en:"I had to concentrate on my walking.",de:"Ich musste mich auf mein Gehen konzentrieren."},
+    left:{en:"Not at all",de:"Gar nicht"}, right:{en:"The whole time",de:"Die ganze Zeit"} },
+  { id:"valence", page:3, when:"all", type:"bipolar", construct:"valence",
+    text:{en:"Overall, how did that way of walking feel?",
+          de:"Wie hat sich dieses Gehen insgesamt angefühlt?"},
+    left:{en:"Very unpleasant",de:"Sehr unangenehm"}, right:{en:"Very pleasant",de:"Sehr angenehm"} },
+  { id:"discomfort", page:3, when:"all", type:"discomfort", construct:"discomfort",
+    text:{en:"Do you have any discomfort or pain right now?",
+          de:"Haben Sie gerade irgendwo Beschwerden oder Schmerzen?"},
+    regions:[{k:"low_back",en:"Lower back",de:"Unterer Rücken"},
+             {k:"pelvis",  en:"Pelvis / waist",de:"Becken / Taille"},
+             {k:"hip",     en:"Hip",de:"Hüfte"},
+             {k:"thigh",   en:"Thigh",de:"Oberschenkel"},
+             {k:"knee",    en:"Knee",de:"Knie"},
+             {k:"ankle",   en:"Ankle / foot",de:"Sprunggelenk / Fuß"},
+             {k:"shoulder",en:"Shoulder / neck",de:"Schulter / Nacken"},
+             {k:"other",   en:"Somewhere else",de:"Woanders"}] },
+
+  /* ---- page 4: comparison and choice ---- */
+  { id:"vs_prev", page:4, when:"all", type:"choice", construct:"pairwise_previous", skipFirstBlock:true,
+    text:{en:"Compared with the previous walk, this one was",
+          de:"Im Vergleich zum vorherigen Abschnitt war dieser"},
+    options:[{v:-2,en:"Much worse",de:"Viel schlechter"},
+             {v:-1,en:"A bit worse",de:"Etwas schlechter"},
+             {v:0, en:"About the same",de:"Ungefähr gleich"},
+             {v:1, en:"A bit better",de:"Etwas besser"},
+             {v:2, en:"Much better",de:"Viel besser"}] },
+  { id:"choose_again", page:4, when:"all", type:"choice", construct:"acceptance",
+    text:{en:"If you had to walk for 30 minutes now, would you choose this way of walking again?",
+          de:"Wenn Sie jetzt 30 Minuten gehen müssten, würden Sie diese Art zu gehen wieder wählen?"},
+    wide:true,
+    options:[{v:1,en:"Yes",de:"Ja"},{v:0,en:"Not sure",de:"Unsicher"},{v:-1,en:"No",de:"Nein"}] },
+  { id:"comment", page:4, when:"all", type:"text", construct:"free_comment", optional:true,
+    text:{en:"Anything you would like to add about that walk?",
+          de:"Möchten Sie noch etwas zu diesem Abschnitt anmerken?"} }
+];
+
+/* ==================================================================
+   4. STATE AND STORAGE
+   ================================================================== */
+const KEY = "hipexo_postcondition_v2";
+const state = {
+  view:"setup",           // setup | q | done
+  lang:CONFIG.language,
+  page:1,
+  meta:{ pid:"", block:1, cond:CONFIG.conditions[0].code, xdf:"" },
+  answers:{},             // id -> value
+  meta_extra:{},          // discomfort regions etc.
+  timing:{ blockStart:null, itemFirst:{}, itemLast:{} },
+  order:[],               // realised item order for this block
+  records:[],             // completed blocks
+  storageOk:true
+};
+
+function load(){
+  try{
+    const raw = localStorage.getItem(KEY);
+    if(raw){ const d = JSON.parse(raw); if(Array.isArray(d.records)) state.records = d.records;
+             if(d.lang) state.lang = d.lang; if(d.meta) state.meta = Object.assign(state.meta, d.meta); }
+  }catch(e){ state.storageOk = false; }
+}
+function persist(){
+  try{ localStorage.setItem(KEY, JSON.stringify({records:state.records, lang:state.lang, meta:state.meta})); }
+  catch(e){ state.storageOk = false; }
+}
+
+/* deterministic shuffle so an order can be reproduced from the data file */
+function hash(str){ let h=2166136261; for(let i=0;i<str.length;i++){ h^=str.charCodeAt(i); h=Math.imul(h,16777619);} return h>>>0; }
+function rng(seed){ return function(){ seed|=0; seed=seed+0x6D2B79F5|0;
+  let t=Math.imul(seed^seed>>>15,1|seed); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+function shuffle(arr, rand){ const a=arr.slice(); for(let i=a.length-1;i>0;i--){ const j=Math.floor(rand()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+
+function currentCondition(){ return CONFIG.conditions.find(c=>c.code===state.meta.cond) || CONFIG.conditions[0]; }
+
+function activeItems(){
+  const exo = currentCondition().exo;
+  return ITEMS.filter(it=>{
+    if(it.when==="exo" && !exo) return false;
+    if(it.skipFirstBlock && Number(state.meta.block)<=1) return false;
+    return true;
+  });
+}
+function pageItems(p){
+  const items = activeItems().filter(it=>it.page===p);
+  if(!CONFIG.randomiseItems) return items;
+  // free-text and the comparison item stay last; the rest are shuffled
+  const fixed = items.filter(it=>it.type==="text");
+  const movable = items.filter(it=>it.type!=="text");
+  const r = rng(hash(state.meta.pid+"|"+state.meta.block+"|p"+p));
+  return shuffle(movable,r).concat(fixed);
+}
+function activePages(){ return [1,2,3,4].filter(p=>pageItems(p).length>0); }
+function realisedOrder(){ return activePages().reduce((a,p)=>a.concat(pageItems(p).map(i=>i.id)),[]); }
+
+function isAnswered(it){
+  if(it.optional) return true;
+  const v = state.answers[it.id];
+  if(it.type==="discomfort"){
+    if(v==="none") return true;
+    return v==="yes" && (state.meta_extra.discomfort_regions||[]).length>0
+           && state.answers.discomfort_intensity!=null;
+  }
+  return v!==undefined && v!==null && v!=="";
+}
+
+/* ==================================================================
+   5. SMALL DOM HELPERS
+   ================================================================== */
+const t = k => UI[state.lang][k];
+const L = o => (o && (o[state.lang] ?? o.en)) ?? "";
+function el(tag, cls, txt){ const e=document.createElement(tag); if(cls) e.className=cls; if(txt!=null) e.textContent=txt; return e; }
+function mark(id){ const now=Date.now();
+  if(!state.timing.itemFirst[id]) state.timing.itemFirst[id]=now;
+  state.timing.itemLast[id]=now; }
+
+/* ==================================================================
+   6. CONTROLS
+   ================================================================== */
+function buildVAS(item, card, bipolar, owner){
+  const wrap = el("div","vas");
+  const line = el("div","vas-line");
+  const fill = el("div","vas-fill");
+  const thumb = el("div","vas-thumb");
+  line.appendChild(fill);
+  if(bipolar) line.appendChild(el("div","vas-mid"));
+  line.appendChild(thumb);
+
+  line.tabIndex = 0;
+  line.setAttribute("role","slider");
+  line.setAttribute("aria-valuemin", bipolar ? -50 : 0);
+  line.setAttribute("aria-valuemax", bipolar ? 50 : 100);
+  line.setAttribute("aria-label", L(item.text));
+
+  const ends = el("div","vas-ends");
+  ends.appendChild(el("span", null, L(item.left)));
+  ends.appendChild(el("span", null, L(item.right)));
+
+  const hint = el("div","vas-untouched", t("tapLine"));
+
+  wrap.appendChild(line); wrap.appendChild(ends); wrap.appendChild(hint);
+
+  function paint(pct){
+    thumb.style.left = pct + "%";
+    fill.style.width = pct + "%";
+    const val = bipolar ? Math.round(pct-50) : Math.round(pct);
+    line.setAttribute("aria-valuenow", val);
+    if(CONFIG.showSliderNumber) line.setAttribute("aria-valuetext", val);
+  }
+  function set(pct, silent){
+    pct = Math.max(0, Math.min(100, pct));
+    wrap.classList.add("touched");
+    paint(pct);
+    state.answers[item.id] = bipolar ? Math.round(pct-50) : Math.round(pct);
+    if(!silent){ mark(item.id); refreshCard(owner || item, card); }
+  }
+  function fromEvent(ev){
+    const r = line.getBoundingClientRect();
+    const x = (ev.touches ? ev.touches[0].clientX : ev.clientX) - r.left;
+    set((x / r.width) * 100);
+  }
+  let dragging = false;
+  line.addEventListener("pointerdown", e=>{ dragging=true; line.setPointerCapture(e.pointerId); fromEvent(e); e.preventDefault(); });
+  line.addEventListener("pointermove", e=>{ if(dragging) fromEvent(e); });
+  line.addEventListener("pointerup", ()=>{ dragging=false; });
+  line.addEventListener("pointercancel", ()=>{ dragging=false; });
+  line.addEventListener("keydown", e=>{
+    const cur = wrap.classList.contains("touched")
+      ? (bipolar ? state.answers[item.id]+50 : state.answers[item.id]) : 50;
+    if(e.key==="ArrowRight"||e.key==="ArrowUp") { set(cur+2); e.preventDefault(); }
+    else if(e.key==="ArrowLeft"||e.key==="ArrowDown"){ set(cur-2); e.preventDefault(); }
+    else if(e.key==="Home"){ set(0); e.preventDefault(); }
+    else if(e.key==="End"){ set(100); e.preventDefault(); }
+  });
+
+  const saved = state.answers[item.id];
+  if(saved!=null) set(bipolar ? saved+50 : saved, true);
+  return wrap;
+}
+
+function buildChoice(item, card){
+  const box = el("div","choices" + (item.wide?" wide":""));
+  box.setAttribute("role","radiogroup");
+  item.options.forEach(o=>{
+    const b = el("button","opt");
+    b.type="button"; b.setAttribute("role","radio");
+    b.setAttribute("aria-checked", String(state.answers[item.id]===o.v));
+    b.appendChild(el("div","dot"));
+    b.appendChild(el("div",null,L(o)));
+    b.onclick = ()=>{
+      state.answers[item.id]=o.v; mark(item.id);
+      [...box.children].forEach(c=>c.setAttribute("aria-checked","false"));
+      b.setAttribute("aria-checked","true");
+      refreshCard(item,card);
+    };
+    box.appendChild(b);
+  });
+  return box;
+}
+
+function buildBorg(item, card){
+  const sc = BORG[CONFIG.effortScale];
+  const box = el("div","ladder");
+  box.setAttribute("role","radiogroup");
+  sc.values.forEach(v=>{
+    const b = el("button","rung");
+    b.type="button"; b.setAttribute("role","radio");
+    b.setAttribute("aria-checked", String(state.answers[item.id]===v));
+    b.appendChild(el("b",null,String(v)));
+    b.appendChild(el("span",null,sc.anchors[state.lang][v] || ""));
+    b.onclick = ()=>{
+      state.answers[item.id]=v; mark(item.id);
+      [...box.children].forEach(c=>c.setAttribute("aria-checked","false"));
+      b.setAttribute("aria-checked","true");
+      refreshCard(item,card);
+    };
+    box.appendChild(b);
+  });
+  return box;
+}
+
+function buildDiscomfort(item, card){
+  const wrap = el("div");
+  const yn = el("div","choices wide");
+  [{v:"none",en:"No",de:"Nein"},{v:"yes",en:"Yes",de:"Ja"}].forEach(o=>{
+    const b = el("button","opt"); b.type="button"; b.setAttribute("role","radio");
+    b.setAttribute("aria-checked", String(state.answers[item.id]===o.v));
+    b.appendChild(el("div","dot")); b.appendChild(el("div",null,L(o)));
+    b.onclick = ()=>{
+      state.answers[item.id]=o.v; mark(item.id);
+      if(o.v==="none"){ state.meta_extra.discomfort_regions=[]; delete state.answers.discomfort_intensity; }
+      rebuild(); 
+    };
+    yn.appendChild(b);
+  });
+  wrap.appendChild(yn);
+
+  if(state.answers[item.id]==="yes"){
+    const chips = el("div","chips");
+    const sel = state.meta_extra.discomfort_regions || (state.meta_extra.discomfort_regions=[]);
+    item.regions.forEach(r=>{
+      const c = el("button","chip"); c.type="button";
+      c.textContent = L(r);
+      c.setAttribute("aria-pressed", String(sel.includes(r.k)));
+      c.onclick = ()=>{
+        const i = sel.indexOf(r.k);
+        if(i>=0) sel.splice(i,1); else sel.push(r.k);
+        c.setAttribute("aria-pressed", String(sel.includes(r.k)));
+        mark(item.id); refreshCard(item,card);
+      };
+      chips.appendChild(c);
+    });
+    wrap.appendChild(chips);
+
+    const lbl = el("div","q-hint");
+    lbl.style.marginTop = "16px";
+    lbl.textContent = state.lang==="de"
+      ? "Wie stark sind die Beschwerden?" : "How strong is it?";
+    wrap.appendChild(lbl);
+    wrap.appendChild(buildVAS({id:"discomfort_intensity", text:item.text,
+      left:{en:"Barely noticeable",de:"Kaum spürbar"},
+      right:{en:"Worst imaginable",de:"Unerträglich"}}, card, false, item));
+  }
+  return wrap;
+}
+
+function buildText(item, card){
+  const ta = document.createElement("textarea");
+  ta.value = state.answers[item.id] || "";
+  ta.placeholder = t("optional");
+  ta.oninput = ()=>{ state.answers[item.id]=ta.value; mark(item.id); };
+  return ta;
+}
+
+function refreshCard(item, card){
+  card.classList.toggle("done", isAnswered(item));
+  updateBar();
+}
+
+/* ==================================================================
+   7. VIEWS
+   ================================================================== */
+const scroll = document.getElementById("scroll");
+const bar = document.getElementById("bar");
+const rail = document.getElementById("rail");
+
+function rebuild(){ const y = scroll.scrollTop; render(); scroll.scrollTop = y; }
+
+function render(){
+  scroll.innerHTML = ""; bar.innerHTML = "";
+  if(state.view==="setup") renderSetup();
+  else if(state.view==="q") renderQuestions();
+  else renderDone();
+  scroll.scrollTop = 0;
+}
+
+function langSwitch(){
+  const box = el("div","langsw");
+  ["en","de"].forEach(l=>{
+    const b = el("button",null,l.toUpperCase());
+    b.type="button"; b.setAttribute("aria-pressed", String(state.lang===l));
+    b.onclick = ()=>{ state.lang=l; persist(); render(); };
+    box.appendChild(b);
+  });
+  return box;
+}
+
+function renderSetup(){
+  rail.style.width = "0%";
+  const head = el("div");
+  head.style.cssText = "display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px";
+  const ht = el("div");
+  ht.appendChild(el("h1", null, CONFIG.study));
+  ht.appendChild(el("div","lede", CONFIG.formVersion));
+  head.appendChild(ht); head.appendChild(langSwitch());
+  scroll.appendChild(head);
+
+  if(!state.storageOk) scroll.appendChild(el("div","warn", t("saveWarn")));
+
+  const s = el("div","setup");
+  s.appendChild(el("h2",null,t("setup")));
+
+  const r1 = el("div","row");
+  r1.appendChild(field(t("pid"), inputEl("text", state.meta.pid, v=>state.meta.pid=v, "P01")));
+  r1.appendChild(field(t("block"), inputEl("number", state.meta.block, v=>state.meta.block=v, "1")));
+  s.appendChild(r1);
+
+  const sel = document.createElement("select");
+  CONFIG.conditions.forEach(c=>{
+    const o = document.createElement("option");
+    o.value=c.code; o.textContent=c.code; o.selected = state.meta.cond===c.code;
+    sel.appendChild(o);
+  });
+  sel.onchange = ()=>{ state.meta.cond = sel.value; };
+  const r2 = el("div","row");
+  r2.appendChild(field(t("cond"), sel));
+  r2.appendChild(field(t("xdf"), inputEl("text", state.meta.xdf, v=>state.meta.xdf=v, "P01_exo-3.xdf")));
+  s.appendChild(r2);
+
+  const go = el("button","btn primary", t("start"));
+  go.type="button";
+  go.onclick = ()=>{
+    if(!state.meta.pid.trim()){ alert(t("pid")); return; }
+    state.answers={}; state.meta_extra={};
+    state.timing={ blockStart:new Date().toISOString(), itemFirst:{}, itemLast:{} };
+    state.page = activePages()[0];
+    state.view="q"; persist(); render();
+  };
+  s.appendChild(go);
+  scroll.appendChild(s);
+
+  // running tally so the experimenter can see what is already in the file
+  const tally = el("div","setup");
+  tally.appendChild(el("h2",null,t("collected")));
+  if(state.records.length===0){ tally.appendChild(el("div","note", t("noRows"))); }
+  else{
+    const tb = el("table","tbl");
+    const hr = el("tr");
+    ["ID","Block","Condition","Time","s"].forEach(h=>hr.appendChild(el("th",null,h)));
+    tb.appendChild(hr);
+    state.records.slice(-12).forEach(r=>{
+      const tr = el("tr");
+      [r.participant_id, r.block, r.condition, (r.block_end||"").slice(11,16),
+       Math.round((r.duration_ms||0)/1000)].forEach(v=>tr.appendChild(el("td",null,String(v))));
+      tb.appendChild(tr);
+    });
+    tally.appendChild(tb);
+  }
+  scroll.appendChild(tally);
+
+  const b1 = el("button","btn", t("exportCsv")); b1.type="button"; b1.onclick = exportCSV;
+  const b2 = el("button","btn", t("exportJson")); b2.type="button"; b2.onclick = exportJSON;
+  const b3 = el("button","btn danger", t("clear")); b3.type="button";
+  b3.onclick = ()=>{ if(confirm(t("confirmClear"))){ state.records=[]; persist(); render(); } };
+  bar.appendChild(b1); bar.appendChild(b2);
+  bar.appendChild(el("div","spacer"));
+  bar.appendChild(b3);
+}
+
+function field(label, control){
+  const f = el("div","field");
+  const l = el("label",null,label);
+  f.appendChild(l); f.appendChild(control);
+  return f;
+}
+function inputEl(type, val, onchange, ph){
+  const i = document.createElement("input");
+  i.type=type; i.value=val; i.placeholder=ph||"";
+  i.oninput = ()=> onchange(i.value);
+  return i;
+}
+
+function renderQuestions(){
+  const pages = activePages();
+  const idx = pages.indexOf(state.page);
+  const items = pageItems(state.page);
+
+  const head = el("div");
+  head.style.cssText="margin-bottom:18px";
+  head.appendChild(el("h1", null, t("blockOf")
+    .replace("%1", state.meta.block).replace("%2", CONFIG.conditions.length)));
+  head.appendChild(el("div","lede", t("p"+state.page)));
+  scroll.appendChild(head);
+
+  items.forEach(item=>{
+    const card = el("div","q");
+    card.appendChild(el("div","q-text", L(item.text)));
+    let ctrl;
+    if(item.type==="borg") ctrl = buildBorg(item, card);
+    else if(item.type==="vas") ctrl = buildVAS(item, card, false);
+    else if(item.type==="bipolar") ctrl = buildVAS(item, card, true);
+    else if(item.type==="choice") ctrl = buildChoice(item, card);
+    else if(item.type==="discomfort") ctrl = buildDiscomfort(item, card);
+    else ctrl = buildText(item, card);
+    card.appendChild(ctrl);
+    if(isAnswered(item)) card.classList.add("done");
+    scroll.appendChild(card);
+  });
+
+  const back = el("button","btn quiet", idx===0 ? t("backToSetup") : t("back"));
+  back.type="button";
+  back.onclick = ()=>{
+    if(idx===0){ state.view="setup"; }
+    else state.page = pages[idx-1];
+    render();
+  };
+  const next = el("button","btn primary", idx===pages.length-1 ? t("finish") : t("next"));
+  next.type="button";
+  next.onclick = ()=>{
+    const missing = items.filter(i=>!isAnswered(i));
+    if(CONFIG.requireAll && missing.length){
+      alert(t("unanswered"));
+      const first = scroll.querySelectorAll(".q")[items.indexOf(missing[0])];
+      if(first && first.scrollIntoView) first.scrollIntoView({behavior:"smooth", block:"center"});
+      return;
+    }
+    if(idx===pages.length-1) finishBlock();
+    else { state.page = pages[idx+1]; render(); }
+  };
+  bar.appendChild(back);
+  bar.appendChild(el("div","spacer"));
+  const c = el("div","count","");
+  bar.appendChild(c);
+  bar.appendChild(next);
+  updateBar();
+}
+
+function updateBar(){
+  if(state.view!=="q") return;
+  const pages = activePages();
+  const items = pageItems(state.page).filter(i=>!i.optional);
+  const done = items.filter(isAnswered).length;
+  const c = bar.querySelector(".count");
+  if(c) c.textContent = t("answered").replace("%1",done).replace("%2",items.length);
+  const totalItems = activeItems().filter(i=>!i.optional).length;
+  const doneAll = activeItems().filter(i=>!i.optional).filter(isAnswered).length;
+  rail.style.width = Math.round(100*doneAll/Math.max(1,totalItems)) + "%";
+}
+
+function finishBlock(){
+  const end = new Date();
+  const rec = {
+    study: CONFIG.study, form_version: CONFIG.formVersion,
+    participant_id: state.meta.pid.trim(),
+    block: Number(state.meta.block),
+    condition: state.meta.cond,
+    is_exo: currentCondition().exo,
+    xdf_file: state.meta.xdf.trim(),
+    language: state.lang,
+    effort_scale: CONFIG.effortScale,
+    randomised: CONFIG.randomiseItems,
+    block_start: state.timing.blockStart,
+    block_end: end.toISOString(),
+    duration_ms: new Date(end) - new Date(state.timing.blockStart),
+    presented_order: realisedOrder(),
+    answers: Object.assign({}, state.answers),
+    discomfort_regions: (state.meta_extra.discomfort_regions||[]).join("|"),
+    first_touch_ms: {}, last_touch_ms: {}
+  };
+  const t0 = new Date(state.timing.blockStart).getTime();
+  Object.keys(state.timing.itemFirst).forEach(k=>{
+    rec.first_touch_ms[k] = state.timing.itemFirst[k]-t0;
+    rec.last_touch_ms[k]  = state.timing.itemLast[k]-t0;
+  });
+  state.records.push(rec);
+  state.meta.block = Number(state.meta.block)+1;
+  const i = CONFIG.conditions.findIndex(c=>c.code===state.meta.cond);
+  if(i>=0 && i+1<CONFIG.conditions.length) state.meta.cond = CONFIG.conditions[i+1].code;
+  state.meta.xdf = "";
+  persist();
+  state.view="done"; render();
+}
+
+function renderDone(){
+  rail.style.width="100%";
+  const box = el("div","setup");
+  box.style.textAlign="center";
+  box.style.padding="56px 24px";
+  box.appendChild(el("div","big-ok", t("done")));
+  box.appendChild(el("div","note", t("doneSub")));
+  scroll.appendChild(box);
+  const b = el("button","btn", t("backToSetup"));
+  b.type="button"; b.onclick = ()=>{ state.view="setup"; render(); };
+  bar.appendChild(el("div","spacer"));
+  bar.appendChild(b);
+}
+
+/* ==================================================================
+   8. EXPORT - long format, one row per item, ready for readtable()
+   ================================================================== */
+function itemMeta(id){
+  const it = ITEMS.find(x=>x.id===id);
+  if(it) return { construct: it.construct, type: it.type };
+  if(id==="discomfort_intensity") return { construct:"discomfort_intensity", type:"vas" };
+  return { construct:"", type:"" };
+}
+function csvCell(v){ return '"' + String(v==null?"":v).replace(/"/g,'""') + '"'; }
+
+function exportCSV(){
+  if(!state.records.length){ alert(t("noRows")); return; }
+  const cols = ["study","form_version","participant_id","block","condition","is_exo","xdf_file",
+                "language","effort_scale","block_start","block_end","duration_ms",
+                "item_id","construct","item_type","position","value","discomfort_regions",
+                "first_touch_ms","last_touch_ms"];
+  const lines = [cols.join(",")];
+  state.records.forEach(r=>{
+    Object.keys(r.answers).forEach(id=>{
+      const m = itemMeta(id);
+      const pos = r.presented_order.indexOf(id);
+      lines.push([
+        r.study, r.form_version, r.participant_id, r.block, r.condition, r.is_exo?1:0, r.xdf_file,
+        r.language, r.effort_scale, r.block_start, r.block_end, r.duration_ms,
+        id, m.construct, m.type, pos<0?"":pos+1, r.answers[id],
+        id==="discomfort"?r.discomfort_regions:"",
+        r.first_touch_ms[id]==null?"":r.first_touch_ms[id],
+        r.last_touch_ms[id]==null?"":r.last_touch_ms[id]
+      ].map(csvCell).join(","));
+    });
+  });
+  download(lines.join("\n"), "text/csv",
+    "postcond_" + (state.records[0].participant_id||"data") + "_" + stamp() + ".csv");
+}
+function exportJSON(){
+  if(!state.records.length){ alert(t("noRows")); return; }
+  download(JSON.stringify({exported:new Date().toISOString(), config:CONFIG, records:state.records}, null, 1),
+    "application/json", "postcond_" + (state.records[0].participant_id||"data") + "_" + stamp() + ".json");
+}
+function stamp(){ return new Date().toISOString().slice(0,16).replace(/[:T]/g,"-"); }
+function download(text, mime, name){
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text],{type:mime}));
+  a.download = name; document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+
+/* ------------------------------------------------------------------ */
+load();
+render();
+</script>
+</body>
+</html>
