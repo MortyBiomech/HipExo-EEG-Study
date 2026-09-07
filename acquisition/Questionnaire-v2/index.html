@@ -182,7 +182,7 @@ textarea{width:100%;min-height:88px;border:1px solid var(--card-edge);border-rad
    ================================================================== */
 const CONFIG = {
   study: "HipExo-EEG-Study",
-  formVersion: "post-condition v2.7",
+  formVersion: "post-condition v3.0",
 
   // Condition codes as they appear in your XDF filenames. The participant
   // never sees these; they see "Block 3 of 8" only.
@@ -241,7 +241,8 @@ const UI = {
     doneSub:"Please hand the tablet back to the experimenter.",
     backToSetup:"Back to setup", exportCsv:"Export CSV", exportJson:"Export JSON",
     clear:"Clear all data", answered:"%1 of %2 answered",
-    p1:"How hard was it?", p2:"The device", p3:"How it felt", p4:"Comparing",
+    p1:"How hard was it?", p2:"The support", p3:"You and the device",
+    p4:"How it felt", p5:"Overall", p6:"In your own words",
     tapLine:"Tap or drag anywhere on the line",
     notAnswered:"Not answered yet",
     unanswered:"Please answer every question before continuing.",
@@ -264,7 +265,8 @@ const UI = {
     doneSub:"Bitte geben Sie das Tablet zurück.",
     backToSetup:"Zurück zur Versuchsleitung", exportCsv:"CSV exportieren", exportJson:"JSON exportieren",
     clear:"Alle Daten löschen", answered:"%1 von %2 beantwortet",
-    p1:"Wie anstrengend war es?", p2:"Das Gerät", p3:"Wie es sich angefühlt hat", p4:"Im Vergleich",
+    p1:"Wie anstrengend war es?", p2:"Die Unterstützung", p3:"Sie und das Gerät",
+    p4:"Wie es sich angefühlt hat", p5:"Insgesamt", p6:"In Ihren eigenen Worten",
     tapLine:"Tippen oder ziehen Sie irgendwo auf der Linie",
     notAnswered:"Noch nicht beantwortet",
     unanswered:"Bitte beantworten Sie alle Fragen, bevor Sie fortfahren.",
@@ -295,7 +297,7 @@ const ITEMS = [
     text:{en:"How hard was your breathing during that walk?",
           de:"Wie stark war Ihre Atmung bei diesem Gehen belastet?"} },
 
-  /* ---- page 2: the device, exo blocks only ---- */
+  /* ---- page 2: the support itself, exo blocks only ---- */
   { id:"assist_felt", page:2, when:"exo", type:"vas", construct:"manipulation_check",
     text:{en:"How much support from the device could you feel?",
           de:"Wie viel Unterstützung durch das Gerät konnten Sie spüren?"},
@@ -328,36 +330,57 @@ const ITEMS = [
     text:{en:"I could tell in advance when the support would come.",
           de:"Ich konnte im Voraus spüren, wann die Unterstützung kommt."},
     left:{en:"Not at all",de:"Gar nicht"}, right:{en:"Completely",de:"Völlig"} },
-  { id:"agency", page:2, when:"exo", type:"vas", construct:"agency",
+
+  /* ---- page 3: the body-device relationship, exo blocks only ---- */
+  { id:"agency", page:3, when:"exo", type:"vas", construct:"agency",
     text:{en:"I decided how my legs moved.",de:"Ich habe selbst bestimmt, wie sich meine Beine bewegt haben."},
     left:{en:"Not at all",de:"Gar nicht"}, right:{en:"Completely",de:"Völlig"} },
-  { id:"agency_ctrl", page:2, when:"exo", type:"vas", construct:"agency_control_item",
+  { id:"agency2", page:3, when:"exo", type:"vas", construct:"agency",
+    text:{en:"I was in full control of what my legs did.",
+          de:"Ich hatte die volle Kontrolle darüber, was meine Beine taten."},
+    left:{en:"Not at all",de:"Gar nicht"}, right:{en:"Completely",de:"Völlig"} },
+  { id:"agency_ctrl", page:3, when:"exo", type:"vas", construct:"agency_control_item",
     text:{en:"My legs were moved by something other than me.",
           de:"Meine Beine wurden von etwas anderem als mir bewegt."},
     left:{en:"Not at all",de:"Gar nicht"}, right:{en:"Completely",de:"Völlig"} },
-  { id:"embody", page:2, when:"exo", type:"vas", construct:"embodiment",
+  { id:"embody", page:3, when:"exo", type:"vas", construct:"embodiment",
     text:{en:"The device felt like a part of my body.",de:"Das Gerät fühlte sich wie ein Teil meines Körpers an."},
     left:{en:"Not at all",de:"Gar nicht"}, right:{en:"Completely",de:"Völlig"} },
-  { id:"safe", page:2, when:"exo", type:"vas", construct:"trust_safety",
+  { id:"embody2", page:3, when:"exo", type:"vas", construct:"embodiment",
+    text:{en:"It felt as if the device belonged to me.",
+          de:"Es fühlte sich an, als würde das Gerät zu mir gehören."},
+    left:{en:"Not at all",de:"Gar nicht"}, right:{en:"Completely",de:"Völlig"} },
+  { id:"embody3", page:3, when:"exo", type:"vas", construct:"embodiment",
+    text:{en:"While I was walking, I stopped noticing the device as something separate.",
+          de:"Während des Gehens habe ich das Gerät nicht mehr als etwas Separates wahrgenommen."},
+    left:{en:"Not at all",de:"Gar nicht"}, right:{en:"Completely",de:"Völlig"} },
+  { id:"safe", page:3, when:"exo", type:"vas", construct:"trust",
     text:{en:"I felt safe letting the device support me.",
           de:"Ich habe mich sicher gefühlt, mich vom Gerät unterstützen zu lassen."},
     left:{en:"Not at all",de:"Gar nicht"}, right:{en:"Completely",de:"Völlig"} },
-  { id:"restricted", page:2, when:"exo", type:"vas", construct:"restriction",
+  { id:"trust2", page:3, when:"exo", type:"vas", construct:"trust",
+    text:{en:"I trusted the device while I was walking.",
+          de:"Ich habe dem Gerät während des Gehens vertraut."},
+    left:{en:"Not at all",de:"Gar nicht"}, right:{en:"Completely",de:"Völlig"} },
+  { id:"restricted", page:3, when:"exo", type:"vas", construct:"restriction",
     text:{en:"I felt restricted in how I could move.",de:"Ich fühlte mich in meiner Bewegung eingeschränkt."},
     left:{en:"Not at all",de:"Gar nicht"}, right:{en:"Completely",de:"Völlig"} },
 
-  /* ---- page 3: subjective experience, every block ---- */
-  { id:"natural", page:3, when:"all", type:"vas", construct:"naturalness",
+  /* ---- page 4: subjective experience, every block ---- */
+  { id:"natural", page:4, when:"all", type:"vas", construct:"naturalness",
     text:{en:"The walking felt natural.",de:"Das Gehen fühlte sich natürlich an."},
     left:{en:"Not at all",de:"Gar nicht"}, right:{en:"Completely",de:"Völlig"} },
-  { id:"attention", page:3, when:"all", type:"vas", construct:"mental_effort",
+  { id:"steady", page:4, when:"all", type:"vas", construct:"balance_confidence",
+    text:{en:"I felt steady on my feet.",de:"Ich fühlte mich sicher auf den Beinen."},
+    left:{en:"Not at all",de:"Gar nicht"}, right:{en:"Completely",de:"Völlig"} },
+  { id:"attention", page:4, when:"all", type:"vas", construct:"mental_effort",
     text:{en:"I had to concentrate on my walking.",de:"Ich musste mich auf mein Gehen konzentrieren."},
     left:{en:"Not at all",de:"Gar nicht"}, right:{en:"The whole time",de:"Die ganze Zeit"} },
-  { id:"valence", page:3, when:"all", type:"bipolar", construct:"valence",
+  { id:"valence", page:4, when:"all", type:"bipolar", construct:"valence",
     text:{en:"Overall, how did that way of walking feel?",
           de:"Wie hat sich dieses Gehen insgesamt angefühlt?"},
     left:{en:"Very unpleasant",de:"Sehr unangenehm"}, right:{en:"Very pleasant",de:"Sehr angenehm"} },
-  { id:"discomfort", page:3, when:"all", type:"discomfort", construct:"discomfort",
+  { id:"discomfort", page:4, when:"all", type:"discomfort", construct:"discomfort",
     text:{en:"Do you have any discomfort or pain right now?",
           de:"Haben Sie gerade irgendwo Beschwerden oder Schmerzen?"},
     regions:[{k:"low_back",en:"Lower back",de:"Unterer Rücken"},
@@ -369,8 +392,16 @@ const ITEMS = [
              {k:"shoulder",en:"Shoulder / neck",de:"Schulter / Nacken"},
              {k:"other",   en:"Somewhere else",de:"Woanders"}] },
 
-  /* ---- page 4: comparison and choice ---- */
-  { id:"vs_prev", page:4, when:"all", type:"choice", construct:"pairwise_previous", skipFirstBlock:true,
+  /* ---- page 5: overall judgements ---- */
+  { id:"vs_no_device", page:5, when:"exo", type:"choice", construct:"perceived_benefit",
+    text:{en:"Compared with walking without the device, this walk was",
+          de:"Im Vergleich zum Gehen ohne das Gerät war dieses Gehen"},
+    options:[{v:-2,en:"Much harder",de:"Viel anstrengender"},
+             {v:-1,en:"A bit harder",de:"Etwas anstrengender"},
+             {v:0, en:"About the same",de:"Ungefähr gleich"},
+             {v:1, en:"A bit easier",de:"Etwas leichter"},
+             {v:2, en:"Much easier",de:"Viel leichter"}] },
+  { id:"vs_prev", page:5, when:"all", type:"choice", construct:"pairwise_previous", skipFirstBlock:true,
     text:{en:"Compared with the previous walk, this one was",
           de:"Im Vergleich zum vorherigen Abschnitt war dieser"},
     options:[{v:-2,en:"Much worse",de:"Viel schlechter"},
@@ -378,22 +409,28 @@ const ITEMS = [
              {v:0, en:"About the same",de:"Ungefähr gleich"},
              {v:1, en:"A bit better",de:"Etwas besser"},
              {v:2, en:"Much better",de:"Viel besser"}] },
-  { id:"choose_again", page:4, when:"exo", type:"choice", construct:"acceptance",
+  { id:"choose_again", page:5, when:"exo", type:"choice", construct:"acceptance",
     text:{en:"If you had to keep walking for another 30 minutes, would you want the device to support you exactly the way it just did?",
           de:"Wenn Sie noch 30 Minuten weitergehen müssten, würden Sie wollen, dass das Gerät Sie genau so unterstützt wie gerade eben?"},
     wide:true,
     options:[{v:1,en:"Yes, keep it as it is",de:"Ja, genau so"},
              {v:0,en:"Not sure",de:"Unsicher"},
              {v:-1,en:"No, I would change it",de:"Nein, ich würde etwas ändern"}] },
-  { id:"comment", page:4, when:"all", type:"open", construct:"free_comment", optional:true, audio:true,
-    text:{en:"Tell us what it was like to walk with the device just now.",
-          de:"Erzählen Sie uns, wie es war, gerade eben mit dem Gerät zu gehen."},
-    hint:{en:"Anything you noticed about how the device and your body worked together, good or bad.",
-          de:"Alles, was Ihnen aufgefallen ist, wie das Gerät und Ihr Körper zusammengespielt haben, positiv wie negativ."},
-    textNoExo:{en:"Tell us what the walking was like just now, without the device.",
-               de:"Erzählen Sie uns, wie das Gehen gerade eben ohne das Gerät war."},
-    hintNoExo:{en:"Anything you noticed, good or bad.",
-               de:"Alles, was Ihnen aufgefallen ist, positiv wie negativ."} }
+
+  /* ---- page 6: structured verbal probe, written or spoken ---- */
+  { id:"probe_notice", page:6, when:"all", type:"open", construct:"probe_notice", optional:true, audio:true,
+    text:{en:"What did you notice about the device during that walk?",
+          de:"Was ist Ihnen während dieses Gehens am Gerät aufgefallen?"},
+    hint:{en:"Anything at all, good or bad.",de:"Alles, was Ihnen aufgefallen ist, positiv wie negativ."},
+    textNoExo:{en:"What did you notice during that walk, without the device?",
+               de:"Was ist Ihnen während dieses Gehens ohne das Gerät aufgefallen?"} },
+  { id:"probe_change", page:6, when:"exo", type:"open", construct:"probe_change", optional:true, audio:true,
+    text:{en:"If you could change one thing about how it supported you, what would it be?",
+          de:"Wenn Sie eine Sache an der Unterstützung ändern könnten, was wäre das?"} },
+  { id:"probe_compare", page:6, when:"all", type:"open", construct:"probe_compare", optional:true, audio:true,
+    skipFirstBlock:true,
+    text:{en:"How did this walk compare with the previous one?",
+          de:"Wie war dieses Gehen im Vergleich zum vorherigen?"} }
 ];
 
 /* ==================================================================
@@ -517,7 +554,7 @@ function pageItems(p){
   const r = rng(hash(state.meta.pid+"|"+state.meta.block+"|p"+p));
   return shuffle(units,r).reduce((a,u)=>a.concat(u),[]).concat(fixed);
 }
-function activePages(){ return [1,2,3,4].filter(p=>pageItems(p).length>0); }
+function activePages(){ return [1,2,3,4,5,6].filter(p=>pageItems(p).length>0); }
 function realisedOrder(){ return activePages().reduce((a,p)=>a.concat(pageItems(p).map(i=>i.id)),[]); }
 
 function itemText(it){
@@ -1143,7 +1180,7 @@ function exportCSV(){
       lines.push([
         r.study, r.form_version, r.participant_id, r.block, r.condition, r.is_exo?1:0, r.xdf_file,
         r.language, r.effort_scale, r.block_start, r.block_end, r.duration_ms,
-        id+"_audio", "free_comment_audio", "audio", "", a.filename, "", "", "", a.seconds
+        id+"_audio", itemMeta(id).construct+"_audio", "audio", "", a.filename, "", "", "", a.seconds
       ].map(csvCell).join(","));
     });
   });
