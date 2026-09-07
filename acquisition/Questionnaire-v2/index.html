@@ -149,7 +149,21 @@ textarea{width:100%;min-height:88px;border:1px solid var(--card-edge);border-rad
 .langsw{display:flex;gap:6px}
 .langsw button{padding:8px 14px;border-radius:6px;border:1px solid var(--card-edge);background:#fff;cursor:pointer;font-size:14px}
 .langsw button[aria-pressed="true"]{background:var(--ink);color:#fff;border-color:var(--ink)}
-@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+/* voice recording ------------------------------------------------- */
+.rec{margin-top:16px;border-top:1px dashed var(--card-edge);padding-top:16px}
+.rec-row{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.rec-btn{display:flex;align-items:center;gap:11px}
+.rec-dot{width:15px;height:15px;border-radius:50%;background:var(--alert);flex:none}
+.rec-btn.on{background:var(--alert);border-color:var(--alert);color:#fff}
+.rec-btn.on .rec-dot{background:#fff;animation:pulse 1.1s infinite}
+@keyframes pulse{50%{opacity:.2}}
+.rec-time{font-variant-numeric:tabular-nums;font-size:19px;color:var(--ink-soft);min-width:60px}
+.rec-msg{font-size:15px;color:var(--ink-soft);margin-top:10px}
+.rec audio{width:100%;margin-top:14px}
+.clip{display:flex;gap:10px;align-items:center;padding:10px 4px;border-bottom:1px solid #EDEAE3;font-size:15px;flex-wrap:wrap}
+.clip .nm{flex:1;min-width:200px;word-break:break-all;font-variant-numeric:tabular-nums}
+.mini{min-height:40px;padding:6px 15px;border-radius:6px;border:1px solid var(--card-edge);background:#fff;cursor:pointer;font-size:14px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 @media (max-width:520px){ .q-text{font-size:18px} h1{font-size:22px} }
 </style>
 </head>
@@ -168,7 +182,7 @@ textarea{width:100%;min-height:88px;border:1px solid var(--card-edge);border-rad
    ================================================================== */
 const CONFIG = {
   study: "HipExo-EEG-Study",
-  formVersion: "post-condition v2.0",
+  formVersion: "post-condition v2.1",
 
   // Condition codes as they appear in your XDF filenames. The participant
   // never sees these; they see "Block 3 of 8" only.
@@ -187,7 +201,10 @@ const CONFIG = {
   randomiseItems: true,     // shuffle item order within each page, seeded per participant+block
   showSliderNumber: false,  // keep false: a visible number invites arithmetic consistency with the last block
   requireAll: true,         // block Next until every item on the page is answered
-  language: "en"            // starting language; participant can switch
+  language: "en",           // starting language; participant can switch
+
+  enableAudio: true,        // let the participant speak their comment instead of typing
+  maxRecordSeconds: 240     // hard stop, so a forgotten recording cannot run all session
 };
 
 /* ==================================================================
@@ -229,8 +246,14 @@ const UI = {
     unanswered:"Please answer every question before continuing.",
     saveWarn:"This browser is not storing answers locally. Do not close the tab before exporting.",
     collected:"Collected so far", noRows:"No completed blocks yet.",
-    confirmClear:"Delete all stored answers for every participant? Export first.",
-    optional:"Optional"
+    confirmClear:"Delete all stored answers and voice recordings? Export first.",
+    optional:"Optional",
+    speak:"Or just say it out loud", record:"Record", stop:"Stop",
+    rerecord:"Record again", del:"Delete", recording:"Recording",
+    micDenied:"The microphone is not available, so please type your answer instead.",
+    micNeedsHttps:"Voice recording only works when the page is opened over https. Please type your answer instead.",
+    clips:"Voice recordings", downloadAll:"Download all audio", noClips:"No recordings yet.",
+    save:"Save", savedClip:"Recorded"
   },
   de:{
     setup:"Versuchsleitung", pid:"Teilnehmer-ID", block:"Blocknummer",
@@ -246,8 +269,14 @@ const UI = {
     unanswered:"Bitte beantworten Sie alle Fragen, bevor Sie fortfahren.",
     saveWarn:"Dieser Browser speichert die Antworten nicht lokal. Bitte vor dem Schließen exportieren.",
     collected:"Bisher erfasst", noRows:"Noch keine abgeschlossenen Abschnitte.",
-    confirmClear:"Alle gespeicherten Antworten löschen? Vorher exportieren.",
-    optional:"Optional"
+    confirmClear:"Alle gespeicherten Antworten und Sprachaufnahmen löschen? Vorher exportieren.",
+    optional:"Optional",
+    speak:"Oder sagen Sie es einfach laut", record:"Aufnehmen", stop:"Stopp",
+    rerecord:"Neu aufnehmen", del:"Löschen", recording:"Aufnahme läuft",
+    micDenied:"Das Mikrofon ist nicht verfügbar. Bitte tippen Sie Ihre Antwort ein.",
+    micNeedsHttps:"Sprachaufnahmen funktionieren nur, wenn die Seite über https geöffnet ist. Bitte tippen Sie Ihre Antwort ein.",
+    clips:"Sprachaufnahmen", downloadAll:"Alle Aufnahmen herunterladen", noClips:"Noch keine Aufnahmen.",
+    save:"Speichern", savedClip:"Aufgenommen"
   }
 };
 
@@ -343,9 +372,9 @@ const ITEMS = [
           de:"Wenn Sie jetzt 30 Minuten gehen müssten, würden Sie diese Art zu gehen wieder wählen?"},
     wide:true,
     options:[{v:1,en:"Yes",de:"Ja"},{v:0,en:"Not sure",de:"Unsicher"},{v:-1,en:"No",de:"Nein"}] },
-  { id:"comment", page:4, when:"all", type:"text", construct:"free_comment", optional:true,
-    text:{en:"Anything you would like to add about that walk?",
-          de:"Möchten Sie noch etwas zu diesem Abschnitt anmerken?"} }
+  { id:"comment", page:4, when:"all", type:"open", construct:"free_comment", optional:true, audio:true,
+    text:{en:"How did that way of walking feel to you? Write it, or record yourself talking.",
+          de:"Wie hat sich dieses Gehen für Sie angefühlt? Schreiben Sie es auf, oder nehmen Sie sich beim Sprechen auf."} }
 ];
 
 /* ==================================================================
@@ -358,6 +387,7 @@ const state = {
   page:1,
   meta:{ pid:"", block:1, cond:CONFIG.conditions[0].code, xdf:"" },
   answers:{},             // id -> value
+  audio:{},               // id -> {key, filename, mime, seconds}
   meta_extra:{},          // discomfort regions etc.
   timing:{ blockStart:null, itemFirst:{}, itemLast:{} },
   order:[],               // realised item order for this block
@@ -375,6 +405,59 @@ function load(){
 function persist(){
   try{ localStorage.setItem(KEY, JSON.stringify({records:state.records, lang:state.lang, meta:state.meta})); }
   catch(e){ state.storageOk = false; }
+}
+
+/* Audio clips are far too large for localStorage, so they live in IndexedDB.
+   They stay on this device until you export them; nothing is uploaded. */
+const ADB = "hipexo_audio_v2";
+let _db = null;
+function db(){
+  return new Promise((res,rej)=>{
+    if(_db) return res(_db);
+    if(!window.indexedDB) return rej(new Error("no indexeddb"));
+    const r = indexedDB.open(ADB,1);
+    r.onupgradeneeded = ()=>{ if(!r.result.objectStoreNames.contains("clips")) r.result.createObjectStore("clips",{keyPath:"key"}); };
+    r.onsuccess = ()=>{ _db=r.result; res(_db); };
+    r.onerror = ()=> rej(r.error);
+  });
+}
+function idbRun(mode, fn){
+  return db().then(d=>new Promise((res,rej)=>{
+    const tx = d.transaction("clips",mode);
+    const st = tx.objectStore("clips");
+    const q = fn(st);
+    tx.oncomplete = ()=> res(q && q.result);
+    tx.onerror = ()=> rej(tx.error);
+  }));
+}
+const clipPut  = rec => idbRun("readwrite", st=>st.put(rec));
+const clipGet  = key => idbRun("readonly",  st=>st.get(key));
+const clipAll  = ()  => idbRun("readonly",  st=>st.getAll());
+const clipDel  = key => idbRun("readwrite", st=>st.delete(key));
+const clipWipe = ()  => idbRun("readwrite", st=>st.clear());
+
+function canRecord(){
+  return CONFIG.enableAudio && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)
+         && !!window.MediaRecorder;
+}
+function pickMime(){
+  const want = ["audio/webm;codecs=opus","audio/webm","audio/mp4","audio/ogg;codecs=opus"];
+  for(const m of want){ if(window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m; }
+  return "";
+}
+function extFor(mime){
+  if(!mime) return "bin";
+  if(mime.indexOf("webm")>=0) return "webm";
+  if(mime.indexOf("mp4")>=0)  return "m4a";
+  if(mime.indexOf("ogg")>=0)  return "ogg";
+  return "bin";
+}
+function clipKey(itemId){
+  return [state.meta.pid.trim()||"noid", "b"+state.meta.block, state.meta.cond, itemId].join("__");
+}
+function mmss(sec){
+  const m = Math.floor(sec/60), s = Math.floor(sec%60);
+  return m + ":" + String(s).padStart(2,"0");
 }
 
 /* deterministic shuffle so an order can be reproduced from the data file */
@@ -584,6 +667,119 @@ function buildText(item, card){
   return ta;
 }
 
+/* write it, say it, or both */
+function buildOpen(item, card){
+  const wrap = el("div");
+  wrap.appendChild(buildText(item, card));
+  if(item.audio && CONFIG.enableAudio) wrap.appendChild(buildRecorder(item, card));
+  return wrap;
+}
+
+function buildRecorder(item, card){
+  const box = el("div","rec");
+  box.appendChild(el("div","q-hint", t("speak")));
+
+  if(!canRecord()){
+    box.appendChild(el("div","rec-msg", window.isSecureContext ? t("micDenied") : t("micNeedsHttps")));
+    return box;
+  }
+
+  const row  = el("div","rec-row");
+  const btn  = el("button","btn rec-btn");
+  btn.type = "button";
+  const dot  = el("div","rec-dot");
+  const lbl  = el("span",null,t("record"));
+  btn.appendChild(dot); btn.appendChild(lbl);
+  const time = el("div","rec-time","");
+  row.appendChild(btn); row.appendChild(time);
+  box.appendChild(row);
+
+  const msg = el("div","rec-msg","");
+  box.appendChild(msg);
+  const player = el("div");
+  box.appendChild(player);
+
+  let mr=null, stream=null, chunks=[], tick=null, t0=0;
+
+  function showSaved(meta, blob){
+    player.innerHTML = "";
+    const a = document.createElement("audio");
+    a.controls = true; a.preload = "metadata";
+    a.src = URL.createObjectURL(blob);
+    player.appendChild(a);
+    const acts = el("div","rec-row");
+    acts.style.marginTop = "10px";
+    const again = el("button","mini", t("rerecord")); again.type="button";
+    again.onclick = ()=>{ player.innerHTML=""; msg.textContent=""; lbl.textContent=t("record"); };
+    const rm = el("button","mini", t("del")); rm.type="button";
+    rm.onclick = ()=>{
+      clipDel(meta.key).catch(()=>{});
+      delete state.audio[item.id];
+      player.innerHTML=""; msg.textContent=""; time.textContent="";
+      lbl.textContent=t("record");
+    };
+    acts.appendChild(again); acts.appendChild(rm);
+    player.appendChild(acts);
+    msg.textContent = t("savedClip") + " (" + mmss(meta.seconds) + ")";
+  }
+
+  async function start(){
+    try{
+      stream = await navigator.mediaDevices.getUserMedia({audio:{
+        echoCancellation:true, noiseSuppression:true, autoGainControl:true }});
+    }catch(e){ msg.textContent = t("micDenied"); return; }
+    const mime = pickMime();
+    try{ mr = mime ? new MediaRecorder(stream,{mimeType:mime}) : new MediaRecorder(stream); }
+    catch(e){ msg.textContent = t("micDenied"); return; }
+    chunks = [];
+    mr.ondataavailable = e=>{ if(e.data && e.data.size) chunks.push(e.data); };
+    mr.onstop = async ()=>{
+      const type = mr.mimeType || mime || "audio/webm";
+      const blob = new Blob(chunks,{type});
+      const secs = (Date.now()-t0)/1000;
+      const key  = clipKey(item.id);
+      const meta = {
+        key, participant_id: state.meta.pid.trim(), block: Number(state.meta.block),
+        condition: state.meta.cond, item_id: item.id, mime: type,
+        seconds: Math.round(secs*10)/10, recorded_at: new Date().toISOString(),
+        filename: key + "." + extFor(type)
+      };
+      let stored = true;
+      try{ await clipPut(Object.assign({blob}, meta)); }
+      catch(e){ stored = false; }
+      state.audio[item.id] = meta;
+      mark(item.id);
+      showSaved(meta, blob);
+      if(!stored) msg.textContent = t("savedClip") + " (" + mmss(meta.seconds) + ") \u2014 not stored on this device, save it now.";
+      if(stream) stream.getTracks().forEach(tr=>tr.stop());
+      stream = null;
+    };
+    mr.start();
+    t0 = Date.now();
+    btn.classList.add("on"); lbl.textContent = t("stop");
+    msg.textContent = t("recording");
+    player.innerHTML = "";
+    tick = setInterval(()=>{
+      const s = (Date.now()-t0)/1000;
+      time.textContent = mmss(s);
+      if(s >= CONFIG.maxRecordSeconds) stop();
+    }, 200);
+  }
+  function stop(){
+    if(tick){ clearInterval(tick); tick=null; }
+    btn.classList.remove("on");
+    if(mr && mr.state !== "inactive") mr.stop();
+  }
+  btn.onclick = ()=>{ (btn.classList.contains("on")) ? stop() : start(); };
+
+  // a clip already recorded for this block, e.g. after stepping back a page
+  const have = state.audio[item.id];
+  if(have){
+    clipGet(have.key).then(r=>{ if(r && r.blob) showSaved(have, r.blob); }).catch(()=>{});
+  }
+  return box;
+}
+
 function refreshCard(item, card){
   card.classList.toggle("done", isAnswered(item));
   updateBar();
@@ -653,7 +849,7 @@ function renderSetup(){
   go.type="button";
   go.onclick = ()=>{
     if(!state.meta.pid.trim()){ alert(t("pid")); return; }
-    state.answers={}; state.meta_extra={};
+    state.answers={}; state.meta_extra={}; state.audio={};
     state.timing={ blockStart:new Date().toISOString(), itemFirst:{}, itemLast:{} };
     state.page = activePages()[0];
     state.view="q"; persist(); render();
@@ -680,10 +876,53 @@ function renderSetup(){
   }
   scroll.appendChild(tally);
 
+  // voice recordings held on this device
+  const ab = el("div","setup");
+  ab.appendChild(el("h2",null,t("clips")));
+  const list = el("div"); list.appendChild(el("div","note", "..."));
+  ab.appendChild(list);
+  const allBtn = el("button","btn", t("downloadAll"));
+  allBtn.type="button"; allBtn.style.marginTop="14px";
+  ab.appendChild(allBtn);
+  scroll.appendChild(ab);
+
+  clipAll().then(cs=>{
+    list.innerHTML = "";
+    if(!cs || !cs.length){ list.appendChild(el("div","note", t("noClips"))); allBtn.disabled = true; return; }
+    cs.sort((a,b)=> (a.participant_id+a.block).localeCompare(b.participant_id+b.block));
+    cs.forEach(c=>{
+      const row = el("div","clip");
+      row.appendChild(el("div","nm", c.filename + "  (" + mmss(c.seconds) + ")"));
+      const play = el("button","mini","\u25B6"); play.type="button";
+      play.onclick = ()=>{
+        const ex = row.querySelector("audio"); if(ex){ ex.remove(); return; }
+        const a = document.createElement("audio");
+        a.controls=true; a.style.width="100%"; a.style.marginTop="8px";
+        a.src = URL.createObjectURL(c.blob);
+        row.appendChild(a);
+        const pr = a.play(); if(pr && pr.catch) pr.catch(()=>{});
+      };
+      const dl = el("button","mini", t("save")); dl.type="button";
+      dl.onclick = ()=> downloadBlob(c.blob, c.filename);
+      const rm = el("button","mini", t("del")); rm.type="button";
+      rm.onclick = ()=>{ if(confirm(c.filename)){ clipDel(c.key).then(render); } };
+      row.appendChild(play); row.appendChild(dl); row.appendChild(rm);
+      list.appendChild(row);
+    });
+    allBtn.onclick = ()=>{
+      cs.forEach((c,i)=> setTimeout(()=> downloadBlob(c.blob, c.filename), i*700));
+    };
+  }).catch(()=>{
+    list.innerHTML = "";
+    list.appendChild(el("div","note", t("noClips")));
+    allBtn.disabled = true;
+  });
+
   const b1 = el("button","btn", t("exportCsv")); b1.type="button"; b1.onclick = exportCSV;
   const b2 = el("button","btn", t("exportJson")); b2.type="button"; b2.onclick = exportJSON;
   const b3 = el("button","btn danger", t("clear")); b3.type="button";
-  b3.onclick = ()=>{ if(confirm(t("confirmClear"))){ state.records=[]; persist(); render(); } };
+  b3.onclick = ()=>{ if(confirm(t("confirmClear"))){
+    state.records=[]; persist(); clipWipe().catch(()=>{}).then(render); } };
   bar.appendChild(b1); bar.appendChild(b2);
   bar.appendChild(el("div","spacer"));
   bar.appendChild(b3);
@@ -723,6 +962,7 @@ function renderQuestions(){
     else if(item.type==="bipolar") ctrl = buildVAS(item, card, true);
     else if(item.type==="choice") ctrl = buildChoice(item, card);
     else if(item.type==="discomfort") ctrl = buildDiscomfort(item, card);
+    else if(item.type==="open") ctrl = buildOpen(item, card);
     else ctrl = buildText(item, card);
     card.appendChild(ctrl);
     if(isAnswered(item)) card.classList.add("done");
@@ -787,6 +1027,7 @@ function finishBlock(){
     presented_order: realisedOrder(),
     answers: Object.assign({}, state.answers),
     discomfort_regions: (state.meta_extra.discomfort_regions||[]).join("|"),
+    audio: Object.assign({}, state.audio),
     first_touch_ms: {}, last_touch_ms: {}
   };
   const t0 = new Date(state.timing.blockStart).getTime();
@@ -833,7 +1074,7 @@ function exportCSV(){
   const cols = ["study","form_version","participant_id","block","condition","is_exo","xdf_file",
                 "language","effort_scale","block_start","block_end","duration_ms",
                 "item_id","construct","item_type","position","value","discomfort_regions",
-                "first_touch_ms","last_touch_ms"];
+                "first_touch_ms","last_touch_ms","audio_seconds"];
   const lines = [cols.join(",")];
   state.records.forEach(r=>{
     Object.keys(r.answers).forEach(id=>{
@@ -845,7 +1086,16 @@ function exportCSV(){
         id, m.construct, m.type, pos<0?"":pos+1, r.answers[id],
         id==="discomfort"?r.discomfort_regions:"",
         r.first_touch_ms[id]==null?"":r.first_touch_ms[id],
-        r.last_touch_ms[id]==null?"":r.last_touch_ms[id]
+        r.last_touch_ms[id]==null?"":r.last_touch_ms[id],
+        ""
+      ].map(csvCell).join(","));
+    });
+    Object.keys(r.audio||{}).forEach(id=>{
+      const a = r.audio[id];
+      lines.push([
+        r.study, r.form_version, r.participant_id, r.block, r.condition, r.is_exo?1:0, r.xdf_file,
+        r.language, r.effort_scale, r.block_start, r.block_end, r.duration_ms,
+        id+"_audio", "free_comment_audio", "audio", "", a.filename, "", "", "", a.seconds
       ].map(csvCell).join(","));
     });
   });
@@ -858,6 +1108,12 @@ function exportJSON(){
     "application/json", "postcond_" + (state.records[0].participant_id||"data") + "_" + stamp() + ".json");
 }
 function stamp(){ return new Date().toISOString().slice(0,16).replace(/[:T]/g,"-"); }
+function downloadBlob(blob, name){
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name; document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+}
 function download(text, mime, name){
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([text],{type:mime}));
