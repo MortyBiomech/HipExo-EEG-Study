@@ -182,7 +182,7 @@ textarea{width:100%;min-height:88px;border:1px solid var(--card-edge);border-rad
    ================================================================== */
 const CONFIG = {
   study: "HipExo-EEG-Study",
-  formVersion: "post-condition v3.4",
+  formVersion: "post-condition v3.8",
 
   // Condition codes as they appear in your XDF filenames. The participant
   // never sees these; they see "Block 3 of 8" only.
@@ -309,14 +309,22 @@ const ITEMS = [
              {v:0, en:"Neither helped nor hindered my movements",de:"Weder unterstützt noch behindert"},
              {v:1, en:"Slightly helped my movements",de:"Leicht unterstützt"},
              {v:2, en:"Strongly helped my movements",de:"Stark unterstützt"}] },
-  { id:"assist_amount", page:2, when:"exo", type:"choice", construct:"amount_judgement",
-    text:{en:"The strength of what the device did was",
-          de:"Die Stärke dessen, was das Gerät gemacht hat, war"},
-    options:[{v:-2,en:"Far too weak",de:"Viel zu schwach"},
-             {v:-1,en:"A little too weak",de:"Etwas zu schwach"},
-             {v:0, en:"About right",de:"Genau richtig"},
-             {v:1, en:"A little too strong",de:"Etwas zu stark"},
-             {v:2, en:"Far too strong",de:"Viel zu stark"}] },
+  // SIGN CONVENTION for assist_amount and assist_timing: both code the
+  // DESIRED CHANGE, not the direction of the error.
+  //   negative = wanted less of it / wanted it earlier
+  //   positive = wanted more of it / wanted it later
+  //   zero     = leave it as it was
+  // Versions up to v3.4 coded the error direction ("far too weak", "much too
+  // early"), which is the opposite sign on both items. The form_version column
+  // in the export identifies which convention a row uses.
+  { id:"assist_amount", page:2, when:"exo", type:"choice", construct:"amount_preference",
+    text:{en:"If you could set it yourself, the device should have been",
+          de:"Wenn Sie es selbst einstellen könnten, hätte das Gerät sein sollen"},
+    options:[{v:-2,en:"Much weaker",de:"Viel schwächer"},
+             {v:-1,en:"A little weaker",de:"Etwas schwächer"},
+             {v:0, en:"Just as it was",de:"Genau so wie es war"},
+             {v:1, en:"A little stronger",de:"Etwas stärker"},
+             {v:2, en:"Much stronger",de:"Viel stärker"}] },
   { id:"assist_pattern", page:2, when:"exo", type:"choice", construct:"assistance_pattern", gates:true,
     text:{en:"Within each step, what the device did was",
           de:"Innerhalb jedes Schrittes war das, was das Gerät gemacht hat,"},
@@ -326,15 +334,15 @@ const ITEMS = [
                           de:"Die ganze Zeit über etwa gleich"},
              {v:"unclear",en:"I could not tell",
                           de:"Konnte ich nicht sagen"}] },
-  { id:"assist_timing", page:2, when:"exo", type:"choice", construct:"timing_judgement",
+  { id:"assist_timing", page:2, when:"exo", type:"choice", construct:"timing_preference",
     dependsOn:{ item:"assist_pattern", values:["phasic"] },
-    text:{en:"The timing of what the device did was",
-          de:"Der Zeitpunkt dessen, was das Gerät gemacht hat, war"},
-    options:[{v:-2,en:"Much too early",de:"Viel zu früh"},
-             {v:-1,en:"Slightly early",de:"Etwas zu früh"},
-             {v:0, en:"Right on time",de:"Genau richtig"},
-             {v:1, en:"Slightly late",de:"Etwas zu spät"},
-             {v:2, en:"Much too late",de:"Viel zu spät"}] },
+    text:{en:"The moment in the step when the device acted should have been",
+          de:"Der Moment im Schritt, in dem das Gerät eingewirkt hat, hätte sein sollen"},
+    options:[{v:-2,en:"Much earlier",de:"Viel früher"},
+             {v:-1,en:"A little earlier",de:"Etwas früher"},
+             {v:0, en:"Just as it was",de:"Genau so wie er war"},
+             {v:1, en:"A little later",de:"Etwas später"},
+             {v:2, en:"Much later",de:"Viel später"}] },
   { id:"predict", page:2, when:"exo", type:"vas", construct:"predictability",
     text:{en:"I could tell in advance when the device would act.",
           de:"Ich konnte im Voraus spüren, wann das Gerät einwirkt."},

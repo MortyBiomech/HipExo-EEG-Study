@@ -1,7 +1,7 @@
 # Post-condition questionnaire: what it measures and why
 
 **Study:** HipExo-EEG-Study, Lauflabor Locomotion Lab, TU Darmstadt
-**Instrument:** post-condition questionnaire v3.4
+**Instrument:** post-condition questionnaire v3.8
 **Administered:** on a tablet, immediately after each of the eight walking blocks (No_Exo_Pre, exo-1 to exo-6, No_Exo_Post)
 **Length:** 25 rating items plus 3 open prompts in an exo block, roughly 2 to 3 minutes; 7 rating items plus 2 open prompts in a no-exo block
 **Status:** in pilot use
@@ -18,7 +18,7 @@
 - **Offline,** the file can be saved and opened directly. Everything works except voice recording.
 - **Data stays on the device.** Answers are held in browser storage and voice clips in IndexedDB on the tablet itself. Nothing is uploaded, and this page has no server behind it. Export the CSV and the audio from the experimenter screen at the end of each session, then clear the device.
 - **To change the instrument,** edit the `CONFIG` block and the `ITEMS` array at the top of the script in `index.html`. Conditions, scale type, randomisation, recording limits and every item's wording live there. Bump `formVersion` with any change to item wording, since that string is written into every exported row and is how a participant's data is later matched to the version they saw.
-- **After pushing a change,** hard-reload the tablet or open the link with a query string such as `?v=3.4`, or the browser will serve the cached previous version.
+- **After pushing a change,** hard-reload the tablet or open the link with a query string such as `?v=3.8`, or the browser will serve the cached previous version.
 
 The rest of this document is the rationale: what each item measures, why it is worded as it is, and the literature it comes from. Section 5 lists the known limitations and open decisions; it is published deliberately rather than kept internal.
 
@@ -77,9 +77,9 @@ Metabolic cost is the term the exoskeleton field has historically optimised, so 
 |---|---|---|
 | Overall, the device (helped / hindered my movements) | -2 strongly worked against to +2 strongly helped | perceived direction |
 | How strongly could you feel the device acting on your legs? | continuous, not at all to very strongly | perceptibility check |
-| The strength of what the device did was | -2 far too weak to +2 far too strong | signed error |
+| If you could set it yourself, the device should have been | -2 much weaker to +2 much stronger | desired change in magnitude |
 | Within each step, what the device did was | phasic / tonic / could not tell | perceived temporal structure |
-| The timing of what the device did was | -2 much too early to +2 much too late | signed error, shown only after "phasic" |
+| The moment in the step when the device acted should have been | -2 much earlier to +2 much later | desired change in timing, shown only after "phasic" |
 | I could tell in advance when the device would act. | continuous | predictability |
 
 This page is the most direct probe of the cost function and the most novel part of the instrument.
@@ -90,7 +90,9 @@ This is now the primary manipulation check for *direction*, and it is stronger f
 
 The magnitude item that follows checks *perceptibility* and is deliberately unsigned. The two are not redundant: a participant can feel the device acting strongly while being unsure whether it helped or hindered, and that state is itself informative. Comparing the absolute value of the direction rating against the felt magnitude is a consistency check within the block. Without a perceptibility check, an absence of difference between conditions would be uninterpretable, because we could not distinguish "this mode felt no different" from "this mode was not perceived at all".
 
-The amount and timing items are **just-about-right** items, borrowed from sensory and consumer science. They are signed rather than unsigned: they record the *direction* in which the participant would have changed the assistance, not merely how much they liked it. This is what makes them usable as an error term. A mode rated "a little too much" and one rated "a little too little" may earn identical liking scores while implying opposite adjustments.
+The magnitude and timing items are **just-about-right** items, borrowed from sensory and consumer science. They are signed rather than unsigned: they record the *direction* in which the participant would have changed the device's behaviour, not merely how much they liked it. This is what makes them usable as an error term. A mode wanted "a little weaker" and one wanted "a little stronger" may earn identical liking scores while implying opposite adjustments.
+
+**Sign convention.** Both items are worded as a desired setting ("the device should have been...") rather than as a description of an error ("the strength was..."). Negative means the participant wanted *less* or *earlier*, positive means *more* or *later*, zero means leave it as it was. This matters for two reasons. First, the earlier descriptive wording ("the strength of what the device did was") shared vocabulary with the perceptibility item directly above it, and participants answering quickly would read the second as a rephrasing of the first and answer consistently rather than considering it, inflating the correlation between two items that are meant to be independent. Second, asking for a setting rather than a verdict aligns the item with the acceptance question and with the verbal probe that asks what the participant would change, so the three can be read against each other. Versions up to v3.4 used the opposite sign on both items; the `form_version` column identifies which convention a row follows.
 
 The pattern item was added after a pilot participant reported that a resistive mode felt constant across the cycle rather than peaked. It records the perceived temporal structure of the field and gates the timing question, because an early-versus-late judgement is only interpretable from someone who perceived a discrete event to place within the cycle. It is a dependent variable in its own right.
 
@@ -99,6 +101,7 @@ Predictability is theoretically the most interesting item for the EEG side of th
 > Ingraham, K. A., Remy, C. D., & Rouse, E. J. (2022). The role of user preference in the customized control of robotic exoskeletons. *Science Robotics*, 7(64), eabj3487.
 > Zhang, J., Fiers, P., Witte, K. A., et al. (2017). Human-in-the-loop optimization of exoskeleton assistance during walking. *Science*, 356(6344), 1280-1284.
 > Rothman, L., & Parker, M. J. (Eds.) (2009). *Just-About-Right (JAR) Scales: Design, Usage, Benefits and Risks*. ASTM International, MNL63.
+> Popper, R., & Kroll, J. J. (2005). Just-about-right scales in consumer research. *Chemosense*, 7(3), 3-6.
 > Blakemore, S.-J., Wolpert, D. M., & Frith, C. D. (2002). Abnormalities in the awareness of action. *Trends in Cognitive Sciences*, 6(6), 237-242.
 > Friston, K. (2010). The free-energy principle: a unified brain theory? *Nature Reviews Neuroscience*, 11(2), 127-138.
 
@@ -215,6 +218,8 @@ These are the dependent variables the other items are meant to explain. The judg
 - **Valence** is an absolute rating, vulnerable to ceiling effects and to individual differences in scale use. It is one of the few items that needed no change for the resistive conditions: the pleasant-unpleasant axis is direction-neutral, and the negative half is where a resistive mode is expected to land.
 - **Perceived benefit versus no device** is new in v3.0 and fills a real gap: the instrument measured absolute exertion and whether the amount of support was right, but never whether the device made walking easier overall. This is the perceptual counterpart of the metabolic saving and can be compared directly against the calorimetry. Its weakness is that it relies on memory of a no-exo block that may be an hour old, so it should be treated as a coarse comparison.
 - **Comparison with the previous block** is a relative judgement. Comparative judgements are typically more sensitive than absolute ones and remain informative when absolute ratings do not separate, which is the classical result underlying paired-comparison scaling. Chained across the eight blocks these give a preference ordering.
+
+  It is deliberately *global* rather than broken down per aspect. Three reasons. It is a dependent variable, so decomposing it into the same aspects used to explain it would make the analysis close to circular; the value of the item is that the participant does the weighting, and that weighting is the cost function under investigation. The per-aspect comparisons are in any case recoverable arithmetically, since every aspect is rated absolutely in every block. And aspect-specific recall across a fifteen-minute gap is largely reconstruction, whereas a global affective comparison survives the delay. The *reason* behind the comparison is collected in the participant's own terms by the third verbal probe rather than by a supplied checklist, which would contaminate that probe.
 - **Acceptance** frames the judgement as a decision with a consequence rather than a rating, which tends to sharpen responses. The "no, I would change it" option pairs with the verbal probe that follows.
 
 > Thurstone, L. L. (1927). A law of comparative judgment. *Psychological Review*, 34(4), 273-286.
