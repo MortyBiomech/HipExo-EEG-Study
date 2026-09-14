@@ -1,8 +1,8 @@
-# Post-condition questionnaire: what it measures and why
+# Study questionnaires: what they measure and why
 
 **Study:** HipExo-EEG-Study, Lauflabor Locomotion Lab, TU Darmstadt
-**Instrument:** post-condition questionnaire v3.8
-**Administered:** on a tablet, immediately after each of the eight walking blocks (No_Exo_Pre, exo-1 to exo-6, No_Exo_Post)
+**Instrument:** questionnaire v4.1 — pre-session screening plus post-condition form, in one file
+**Administered:** on a tablet. The screening runs once before the session; the post-condition form runs after each of the eight walking blocks (No_Exo_Pre, exo-1 to exo-6, No_Exo_Post)
 **Length:** 25 rating items plus 3 open prompts in an exo block, roughly 2 to 3 minutes; 7 rating items plus 2 open prompts in a no-exo block
 **Status:** in pilot use
 
@@ -17,8 +17,8 @@
 - **On the lab tablet,** open the link above and use "Add to Home Screen" so it launches without an address bar. Voice recording requires the https link; it will not work from a copy opened off the filesystem.
 - **Offline,** the file can be saved and opened directly. Everything works except voice recording.
 - **Data stays on the device.** Answers are held in browser storage and voice clips in IndexedDB on the tablet itself. Nothing is uploaded, and this page has no server behind it. Export the CSV and the audio from the experimenter screen at the end of each session, then clear the device.
-- **To change the instrument,** edit the `CONFIG` block and the `ITEMS` array at the top of the script in `index.html`. Conditions, scale type, randomisation, recording limits and every item's wording live there. Bump `formVersion` with any change to item wording, since that string is written into every exported row and is how a participant's data is later matched to the version they saw.
-- **After pushing a change,** hard-reload the tablet or open the link with a query string such as `?v=3.8`, or the browser will serve the cached previous version.
+- **To change the instrument,** edit the `CONFIG` block and the `ITEMS` array (post-condition) or `PRE_ITEMS` array (pre-session screening) at the top of the script in `index.html`. Conditions, scale type, randomisation, recording limits and every item's wording live there. Bump `formVersion` with any change to item wording, since that string is written into every exported row and is how a participant's data is later matched to the version they saw.
+- **After pushing a change,** hard-reload the tablet or open the link with a query string such as `?v=4.1`, or the browser will serve the cached previous version.
 
 The rest of this document is the rationale: what each item measures, why it is worded as it is, and the literature it comes from. Section 5 lists the known limitations and open decisions; it is published deliberately rather than kept internal.
 
@@ -51,6 +51,25 @@ The design is organised around one question: **on what basis does a person judge
 | 4 | How it felt | 5 | 5 |
 | 5 | Overall | 3 | 1 |
 | 6 | In your own words | 3 | 2 |
+
+### 1.3 Pre-session screening
+
+Run once per participant, before the first walking block, from the same tablet and the same URL. The experimenter enters the participant ID and taps **Start pre-session screening**; the block counter is untouched, so the session then proceeds normally from block 1.
+
+This is section A1 of the original questionnaire, restructured but not rewritten. Screening questions are screening questions, and the content was already sound. What changed is the phrasing (conversational rather than clinical, since the participant reads it unaided), the layout (four short pages instead of one long list), and the follow-ups (a free-text box appears only when an answer needs explaining).
+
+| Page | Content | Items |
+|---|---|---|
+| 1 | About you | age, height, body mass, dominant foot, stronger leg |
+| 2 | Health and safety | injury in past 6 months, fall in past 12 months, diagnosed neuromuscular / cardiovascular / balance condition, skin sensitivity at contact areas, medication affecting strength, balance, coordination or tiredness |
+| 3 | Background | prior exoskeleton experience, weekly activity level, sleep in last 24 h, caffeine in last 6 h |
+| 4 | Today | willing to walk repeatedly in the device, willing to carry 1 to 2 kg at waist and thighs, consent to participation and to EEG, EMG and IMU sensor placement |
+
+Each of the five health items on page 2 reveals a free-text box when answered yes, so a participant with a relevant history can describe it without every participant seeing five empty boxes. The same applies to prior device experience (which devices) and caffeine (how much). Items 1 to 4 also supply the anthropometrics needed for normalisation and the limb dominance needed for the gait analysis, so the screening is not purely exclusionary.
+
+**Two sections of the original form were deliberately not carried over.** Section A2 (baseline discomfort by body region) is now redundant, because discomfort is asked in every block including No_Exo_Pre, which gives the same baseline plus its trajectory across the session. Section A3 (task familiarity and expectations) was dropped because its items were framed entirely around assistance and therefore misdescribe the two resistive conditions, and because its vocabulary no longer matches the post-condition form. If expectation effects are of interest they should be reinstated as a rewritten set rather than as they stood.
+
+**Note on the data.** These answers include health information. They are stored on the tablet in the same local store as everything else and are exported in the same CSV, where they carry `form_section = pre_session_screening` and `block = 0`. Handling and retention should follow whatever the ethics approval specifies for health data, which is likely stricter than for the rating scales.
 
 ---
 
@@ -236,7 +255,11 @@ These are the dependent variables the other items are meant to explain. The judg
 | If you could change one thing about how it supported you, what would it be? | exo blocks |
 | How did this walk compare with the previous one? | every block except the first |
 
-Each prompt can be typed or answered by voice; audio is stored on the tablet and transcribed later. The first prompt takes three forms, one per block type, and they are not cosmetic variants of one question:
+**These are spoken answers, not written ones.** From v4.1 the typed box is not offered to the participant: the page opens with a note asking them to hand the tablet back, and the prompts are then put to them by the experimenter as a short interview, with each answer recorded.
+
+The change followed a second pilot. The participant did not use the recorder when a text box sat next to it, and typed a few words per prompt instead. Typing on a tablet after five minutes of walking, in a cap and a harness, is enough friction that the path of least effort is a short answer, and short answers are precisely what this section exists to avoid. Offering both routes equally meant the worse route won.
+
+Two fallbacks remain, because voice-only must not mean data-lost. If the microphone is unavailable, or the page has been opened without https, the typed box appears automatically with a message explaining why. And a discreet link labelled for the experimenter reveals the box on any prompt, for a participant who has not consented to audio or does not wish to be recorded. Setting `CONFIG.openEndedMode` to `"text"` disables recording entirely, which is the setting to use if the ethics amendment for audio is not yet in place. The first prompt takes three forms, one per block type, and they are not cosmetic variants of one question:
 
 - **In exo blocks** it collects reflections on the interaction, which is the primary purpose of the probe.
 - **In No_Exo_Pre** it collects apparatus discomfort *before the device is introduced*. The participant is already wearing the cap, the EMG sensors and the harness, and may be unused to the treadmill. Anything uncomfortable at that point is present in every subsequent block too. Without this baseline, a later complaint about pressure or distraction first surfaces in an exo block and will be attributed to the exoskeleton by default. The three answers share an `item_id`, so they are one variable in the data file; the block type distinguishes them.
@@ -282,7 +305,7 @@ Direction is not lost by this change. It is captured by the perceived-benefit it
 
 ## 4. Output
 
-Long-format CSV, one row per item, carrying participant ID, block number, condition code, XDF filename, item ID, construct label, presented position, response value, and response latency relative to the start of the block. Voice recordings are named to the same convention (`P09__b3__exo-5__probe_change.webm`) and appear as rows with their filename and duration. Everything stays on the tablet until exported; nothing is transmitted.
+Long-format CSV, one row per item, carrying participant ID, block number, condition code, XDF filename, item ID, construct label, presented position, response value, and response latency relative to the start of the block. A `form_section` column distinguishes `pre_session_screening` rows (block 0, condition `PRE_SESSION`) from `post_condition` rows. Voice recordings are named to the same convention (`P09__b3__exo-5__probe_change.webm`) and appear as rows with their filename and duration. Everything stays on the tablet until exported; nothing is transmitted.
 
 ---
 
