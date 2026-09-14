@@ -149,6 +149,31 @@ textarea{width:100%;min-height:88px;border:1px solid var(--card-edge);border-rad
 .langsw{display:flex;gap:6px}
 .langsw button{padding:8px 14px;border-radius:6px;border:1px solid var(--card-edge);background:#fff;cursor:pointer;font-size:14px}
 .langsw button[aria-pressed="true"]{background:var(--ink);color:#fff;border-color:var(--ink)}
+/* page-level note ------------------------------------------------- */
+.pagenote{
+  background:var(--mark-soft);border:1px solid #B7D4CB;border-left:4px solid var(--mark);
+  border-radius:var(--r);padding:14px 16px;margin-bottom:16px;
+  font-size:16px;line-height:1.45;color:#12473C
+}
+.typelink{
+  margin-top:14px;background:none;border:none;padding:8px 0;cursor:pointer;
+  font-size:14px;color:var(--ink-faint);text-decoration:underline
+}
+
+/* numeric and detail inputs --------------------------------------- */
+.numrow{display:flex;align-items:center;gap:12px}
+.numin{
+  width:150px;min-height:var(--tap);border:1px solid var(--card-edge);border-radius:8px;
+  padding:10px 14px;background:#fff;font-size:19px;font-variant-numeric:tabular-nums
+}
+.unit{font-size:16px;color:var(--ink-soft)}
+.detail{margin-top:14px}
+.detail .q-hint{margin:0 0 8px}
+.detailin{
+  width:100%;min-height:var(--tap);border:1px solid var(--card-edge);border-radius:8px;
+  padding:10px 14px;background:#fff
+}
+
 /* voice recording ------------------------------------------------- */
 .rec{margin-top:16px;border-top:1px dashed var(--card-edge);padding-top:16px}
 .rec-row{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
@@ -182,7 +207,7 @@ textarea{width:100%;min-height:88px;border:1px solid var(--card-edge);border-rad
    ================================================================== */
 const CONFIG = {
   study: "HipExo-EEG-Study",
-  formVersion: "post-condition v3.8",
+  formVersion: "questionnaire v4.1",
 
   // Condition codes as they appear in your XDF filenames. The participant
   // never sees these; they see "Block 3 of 8" only.
@@ -204,8 +229,14 @@ const CONFIG = {
   requireAll: true,         // block Next until every item on the page is answered
   language: "en",           // starting language; participant can switch
 
-  enableAudio: true,        // let the participant speak their comment instead of typing
-  maxRecordSeconds: 240     // hard stop, so a forgotten recording cannot run all session
+  enableAudio: true,        // voice answers for the open-ended prompts
+  maxRecordSeconds: 240,    // hard stop, so a forgotten recording cannot run all session
+
+  // "voice"         - spoken answers only; a typed box is reachable but is
+  //                   labelled for the experimenter, not offered to the participant
+  // "voice_or_text" - both offered equally (the pre-v4.1 behaviour)
+  // "text"          - typing only, e.g. if audio consent has not been given
+  openEndedMode: "voice"
 };
 
 /* ==================================================================
@@ -243,6 +274,11 @@ const UI = {
     clear:"Clear all data", answered:"%1 of %2 answered",
     p1:"How hard was it?", p2:"What the device did", p3:"You and the device",
     p4:"How it felt", p5:"Overall", p6:"In your own words",
+    startPre:"Start pre-session screening", preTitle:"Before we start",
+    pre1:"About you", pre2:"Health and safety", pre3:"Background", pre4:"Today",
+    detail:"Please give a few details", units_years:"years", units_cm:"cm",
+    units_kg:"kg", units_hours:"hours", preDone:"Screening complete.",
+    preDoneSub:"Please hand the tablet back to the experimenter.",
     tapLine:"Tap or drag anywhere on the line",
     notAnswered:"Not answered yet",
     unanswered:"Please answer every question before continuing.",
@@ -255,7 +291,10 @@ const UI = {
     micDenied:"The microphone is not available, so please type your answer instead.",
     micNeedsHttps:"Voice recording only works when the page is opened over https. Please type your answer instead.",
     clips:"Voice recordings", downloadAll:"Download all audio", noClips:"No recordings yet.",
-    save:"Save", savedClip:"Recorded"
+    save:"Save", savedClip:"Recorded",
+    interviewNote:"Please hand the tablet back to the experimenter. These last questions work as a short interview: the experimenter reads each one out, and your spoken answer is recorded.",
+    typeInstead:"Experimenter: type the answer instead",
+    micFallback:"The microphone is not available, so please type the answer here."
   },
   de:{
     setup:"Versuchsleitung", pid:"Teilnehmer-ID", block:"Blocknummer",
@@ -267,6 +306,11 @@ const UI = {
     clear:"Alle Daten löschen", answered:"%1 von %2 beantwortet",
     p1:"Wie anstrengend war es?", p2:"Was das Gerät gemacht hat", p3:"Sie und das Gerät",
     p4:"Wie es sich angefühlt hat", p5:"Insgesamt", p6:"In Ihren eigenen Worten",
+    startPre:"Eingangsbefragung starten", preTitle:"Bevor wir anfangen",
+    pre1:"Über Sie", pre2:"Gesundheit und Sicherheit", pre3:"Hintergrund", pre4:"Heute",
+    detail:"Bitte kurz beschreiben", units_years:"Jahre", units_cm:"cm",
+    units_kg:"kg", units_hours:"Stunden", preDone:"Befragung abgeschlossen.",
+    preDoneSub:"Bitte geben Sie das Tablet zurück.",
     tapLine:"Tippen oder ziehen Sie irgendwo auf der Linie",
     notAnswered:"Noch nicht beantwortet",
     unanswered:"Bitte beantworten Sie alle Fragen, bevor Sie fortfahren.",
@@ -279,7 +323,10 @@ const UI = {
     micDenied:"Das Mikrofon ist nicht verfügbar. Bitte tippen Sie Ihre Antwort ein.",
     micNeedsHttps:"Sprachaufnahmen funktionieren nur, wenn die Seite über https geöffnet ist. Bitte tippen Sie Ihre Antwort ein.",
     clips:"Sprachaufnahmen", downloadAll:"Alle Aufnahmen herunterladen", noClips:"Noch keine Aufnahmen.",
-    save:"Speichern", savedClip:"Aufgenommen"
+    save:"Speichern", savedClip:"Aufgenommen",
+    interviewNote:"Bitte geben Sie das Tablet an die Versuchsleitung zurück. Die letzten Fragen sind ein kurzes Interview: Die Versuchsleitung liest jede Frage vor, und Ihre gesprochene Antwort wird aufgenommen.",
+    typeInstead:"Versuchsleitung: Antwort stattdessen eintippen",
+    micFallback:"Das Mikrofon ist nicht verfügbar. Bitte tippen Sie die Antwort hier ein."
   }
 };
 
@@ -463,11 +510,99 @@ const ITEMS = [
 ];
 
 /* ==================================================================
+   3b. PRE-SESSION SCREENING (section A1 of the original form)
+   Run once per participant, before the first walking block.
+   Not randomised: this is a form, and its order is part of its logic.
+   ================================================================== */
+const PRE_ITEMS = [
+  /* ---- page 1: about you ---- */
+  { id:"pre_age", page:1, type:"num", construct:"age", unit:"units_years",
+    text:{en:"How old are you?",de:"Wie alt sind Sie?"} },
+  { id:"pre_height", page:1, type:"num", construct:"height", unit:"units_cm",
+    text:{en:"How tall are you?",de:"Wie groß sind Sie?"} },
+  { id:"pre_weight", page:1, type:"num", construct:"body_mass", unit:"units_kg",
+    text:{en:"How much do you weigh?",de:"Wie viel wiegen Sie?"} },
+  { id:"pre_foot", page:1, type:"choice", construct:"dominant_foot", wide:true,
+    text:{en:"Which foot would you use to kick a ball?",
+          de:"Mit welchem Fuß würden Sie einen Ball schießen?"},
+    options:[{v:"right",en:"Right",de:"Rechts"},{v:"left",en:"Left",de:"Links"}] },
+  { id:"pre_leg", page:1, type:"choice", construct:"dominant_leg", wide:true,
+    text:{en:"Which leg do you consider your stronger one?",
+          de:"Welches Bein halten Sie für Ihr stärkeres?"},
+    options:[{v:"right",en:"Right",de:"Rechts"},{v:"left",en:"Left",de:"Links"},
+             {v:"none",en:"Neither",de:"Keines"}] },
+
+  /* ---- page 2: health and safety ---- */
+  { id:"pre_injury", page:2, type:"choice", construct:"injury_screen", wide:true, detailOn:["yes"],
+    text:{en:"In the past six months, have you had any injury, pain or surgery affecting your hip, pelvis, thigh, knee, ankle or foot?",
+          de:"Hatten Sie in den letzten sechs Monaten eine Verletzung, Schmerzen oder eine Operation an Hüfte, Becken, Oberschenkel, Knie, Sprunggelenk oder Fuß?"},
+    options:[{v:"no",en:"No",de:"Nein"},{v:"yes",en:"Yes",de:"Ja"}] },
+  { id:"pre_falls", page:2, type:"choice", construct:"fall_history", wide:true, detailOn:["yes"],
+    text:{en:"Have you had a fall in the past twelve months?",
+          de:"Sind Sie in den letzten zwölf Monaten gestürzt?"},
+    detailText:{en:"How many times, and what happened?",de:"Wie oft, und was ist passiert?"},
+    options:[{v:"no",en:"No",de:"Nein"},{v:"yes",en:"Yes",de:"Ja"}] },
+  { id:"pre_condition", page:2, type:"choice", construct:"medical_screen", wide:true, detailOn:["yes"],
+    text:{en:"Has a doctor diagnosed you with any neuromuscular, cardiovascular or balance condition?",
+          de:"Wurde bei Ihnen eine neuromuskuläre, kardiovaskuläre oder Gleichgewichtsstörung diagnostiziert?"},
+    options:[{v:"no",en:"No",de:"Nein"},{v:"yes",en:"Yes",de:"Ja"}] },
+  { id:"pre_skin", page:2, type:"choice", construct:"skin_screen", wide:true, detailOn:["yes"],
+    text:{en:"Do you have any skin condition or sensitivity where the device sits, at the waist, pelvis or upper thigh?",
+          de:"Haben Sie eine Hauterkrankung oder Empfindlichkeit dort, wo das Gerät sitzt, an Taille, Becken oder Oberschenkel?"},
+    options:[{v:"no",en:"No",de:"Nein"},{v:"yes",en:"Yes",de:"Ja"}] },
+  { id:"pre_meds", page:2, type:"choice", construct:"medication_screen", wide:true, detailOn:["yes"],
+    text:{en:"Are you taking anything that could affect your strength, balance, coordination or tiredness today?",
+          de:"Nehmen Sie etwas ein, das heute Ihre Kraft, Ihr Gleichgewicht, Ihre Koordination oder Ihre Müdigkeit beeinflussen könnte?"},
+    options:[{v:"no",en:"No",de:"Nein"},{v:"yes",en:"Yes",de:"Ja"}] },
+
+  /* ---- page 3: background ---- */
+  { id:"pre_exo_exp", page:3, type:"choice", construct:"exo_experience",
+    detailOn:["limited","moderate","extensive"],
+    text:{en:"How much experience do you have with exoskeletons or wearable robotics?",
+          de:"Wie viel Erfahrung haben Sie mit Exoskeletten oder tragbarer Robotik?"},
+    detailText:{en:"Which devices?",de:"Welche Geräte?"},
+    options:[{v:"none",en:"None at all",de:"Gar keine"},
+             {v:"limited",en:"Tried one once or twice",de:"Ein- oder zweimal ausprobiert"},
+             {v:"moderate",en:"Used one several times",de:"Mehrfach benutzt"},
+             {v:"extensive",en:"Used them regularly",de:"Regelmäßig benutzt"}] },
+  { id:"pre_activity", page:3, type:"choice", construct:"activity_level",
+    text:{en:"In a typical week, how much moderate or vigorous exercise do you do?",
+          de:"Wie viel moderate oder intensive Bewegung haben Sie in einer typischen Woche?"},
+    options:[{v:"<1",en:"Less than 1 hour",de:"Weniger als 1 Stunde"},
+             {v:"1-3",en:"1 to 3 hours",de:"1 bis 3 Stunden"},
+             {v:"3-5",en:"3 to 5 hours",de:"3 bis 5 Stunden"},
+             {v:">5",en:"More than 5 hours",de:"Mehr als 5 Stunden"}] },
+  { id:"pre_sleep", page:3, type:"num", construct:"sleep_hours", unit:"units_hours",
+    text:{en:"How many hours did you sleep in the last 24 hours?",
+          de:"Wie viele Stunden haben Sie in den letzten 24 Stunden geschlafen?"} },
+  { id:"pre_caffeine", page:3, type:"choice", construct:"caffeine", wide:true, detailOn:["yes"],
+    text:{en:"Have you had any caffeine in the last six hours?",
+          de:"Haben Sie in den letzten sechs Stunden Koffein zu sich genommen?"},
+    detailText:{en:"How much, roughly?",de:"Wie viel ungefähr?"},
+    options:[{v:"no",en:"No",de:"Nein"},{v:"yes",en:"Yes",de:"Ja"}] },
+
+  /* ---- page 4: today ---- */
+  { id:"pre_ok_walk", page:4, type:"choice", construct:"willingness_walk", wide:true,
+    text:{en:"Are you happy to do repeated walking today while wearing the hip exoskeleton?",
+          de:"Sind Sie damit einverstanden, heute wiederholt mit dem Hüft-Exoskelett zu gehen?"},
+    options:[{v:"yes",en:"Yes",de:"Ja"},{v:"no",en:"No",de:"Nein"}] },
+  { id:"pre_ok_weight", page:4, type:"choice", construct:"willingness_load", wide:true,
+    text:{en:"Are you happy to walk with a device of about 1 to 2 kg attached at the waist and thighs?",
+          de:"Sind Sie damit einverstanden, mit einem etwa 1 bis 2 kg schweren Gerät an Taille und Oberschenkeln zu gehen?"},
+    options:[{v:"yes",en:"Yes",de:"Ja"},{v:"no",en:"No",de:"Nein"}] },
+  { id:"pre_consent", page:4, type:"choice", construct:"consent", wide:true,
+    text:{en:"Do you consent to take part, and to having EEG, EMG and IMU sensors placed on you?",
+          de:"Sind Sie mit der Teilnahme und dem Anbringen von EEG-, EMG- und IMU-Sensoren einverstanden?"},
+    options:[{v:"yes",en:"Yes",de:"Ja"},{v:"no",en:"No",de:"Nein"}] }
+];
+
+/* ==================================================================
    4. STATE AND STORAGE
    ================================================================== */
 const KEY = "hipexo_postcondition_v2";
 const state = {
   view:"setup",           // setup | q | done
+  mode:"post",            // post = per-block questionnaire, pre = session screening
   lang:CONFIG.language,
   page:1,
   meta:{ pid:"", block:1, cond:CONFIG.conditions[0].code, xdf:"" },
@@ -552,12 +687,14 @@ function rng(seed){ return function(){ seed|=0; seed=seed+0x6D2B79F5|0;
 function shuffle(arr, rand){ const a=arr.slice(); for(let i=a.length-1;i>0;i--){ const j=Math.floor(rand()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
 
 function currentCondition(){ return CONFIG.conditions.find(c=>c.code===state.meta.cond) || CONFIG.conditions[0]; }
+function bank(){ return state.mode==="pre" ? PRE_ITEMS : ITEMS; }
 
 function visible(it){
   if(!it.dependsOn) return true;
   return it.dependsOn.values.indexOf(state.answers[it.dependsOn.item]) >= 0;
 }
 function activeItems(){
+  if(state.mode==="pre") return PRE_ITEMS.filter(visible);
   const exo = currentCondition().exo;
   return ITEMS.filter(it=>{
     if(it.when==="exo" && !exo) return false;
@@ -568,7 +705,7 @@ function activeItems(){
 }
 function pageItems(p){
   const items = activeItems().filter(it=>it.page===p);
-  if(!CONFIG.randomiseItems) return items;
+  if(!CONFIG.randomiseItems || state.mode==="pre") return items;
   // free-text and the comparison item stay last; the rest are shuffled
   const isOpenEnded = it => it.type==="text" || it.type==="open";
   const fixed = items.filter(isOpenEnded);
@@ -577,7 +714,7 @@ function pageItems(p){
   // item can never be shuffled above the question that unlocks it
   const units = [];
   movable.forEach(it=>{
-    const u = it.dependsOn && units.find(g=>g[0].id===it.dependsOn.item);
+    const u = it.dependsOn && units.find(g=>g[0].id===it.dependsOn.item);  // gate + dependants
     if(u) u.push(it); else units.push([it]);
   });
   const r = rng(hash(state.meta.pid+"|"+state.meta.block+"|p"+p));
@@ -602,6 +739,7 @@ function itemHint(it){
 
 function isAnswered(it){
   if(it.optional) return true;
+  if(it.type==="num") { const v=state.answers[it.id]; return v!==undefined && v!==null && String(v).trim()!==""; }
   const v = state.answers[it.id];
   if(it.type==="discomfort"){
     if(v==="none") return true;
@@ -685,7 +823,19 @@ function buildVAS(item, card, bipolar, owner){
   return wrap;
 }
 
+function buildNum(item, card){
+  const wrap = el("div","numrow");
+  const i = document.createElement("input");
+  i.type = "number"; i.inputMode = "decimal"; i.className = "numin";
+  i.value = state.answers[item.id] ?? "";
+  i.oninput = ()=>{ state.answers[item.id] = i.value; mark(item.id); refreshCard(item, card); };
+  wrap.appendChild(i);
+  if(item.unit) wrap.appendChild(el("span","unit", t(item.unit)));
+  return wrap;
+}
+
 function buildChoice(item, card){
+  const outer = el("div");
   const box = el("div","choices" + (item.wide?" wide":""));
   box.setAttribute("role","radiogroup");
   item.options.forEach(o=>{
@@ -699,16 +849,39 @@ function buildChoice(item, card){
       [...box.children].forEach(c=>c.setAttribute("aria-checked","false"));
       b.setAttribute("aria-checked","true");
       if(item.gates){
-        ITEMS.filter(x=>x.dependsOn && x.dependsOn.item===item.id)
+        bank().filter(x=>x.dependsOn && x.dependsOn.item===item.id)
              .forEach(x=>{ if(x.dependsOn.values.indexOf(o.v)<0) delete state.answers[x.id]; });
         rebuild();
         return;
       }
+      if(item.detailOn) syncDetail();
       refreshCard(item,card);
     };
     box.appendChild(b);
   });
-  return box;
+  outer.appendChild(box);
+
+  // optional free-text follow-up shown only for certain answers
+  let detail = null;
+  function syncDetail(){
+    const show = item.detailOn && item.detailOn.indexOf(state.answers[item.id]) >= 0;
+    if(show && !detail){
+      detail = el("div","detail");
+      const lbl = el("div","q-hint", item.detailText ? L(item.detailText) : t("detail"));
+      const inp = document.createElement("input");
+      inp.type = "text"; inp.className = "detailin";
+      inp.placeholder = t("detail");
+      inp.value = state.answers[item.id+"_detail"] || "";
+      inp.oninput = ()=>{ state.answers[item.id+"_detail"] = inp.value; mark(item.id+"_detail"); };
+      detail.appendChild(lbl); detail.appendChild(inp);
+      outer.appendChild(detail);
+    } else if(!show && detail){
+      delete state.answers[item.id+"_detail"];
+      detail.remove(); detail = null;
+    }
+  }
+  syncDetail();
+  return outer;
 }
 
 function buildBorg(item, card){
@@ -785,11 +958,36 @@ function buildText(item, card){
   return ta;
 }
 
-/* write it, say it, or both */
+/* Spoken answers are the point of these items: a pilot participant who was
+   asked aloud gave detailed reflections and typed almost nothing when given a
+   box. Typing stays reachable for the experimenter, and appears on its own if
+   the microphone is unavailable. */
 function buildOpen(item, card){
   const wrap = el("div");
-  wrap.appendChild(buildText(item, card));
-  if(item.audio && CONFIG.enableAudio) wrap.appendChild(buildRecorder(item, card));
+  const mode = CONFIG.openEndedMode || "voice_or_text";
+  const canUseAudio = item.audio && CONFIG.enableAudio && mode !== "text";
+
+  if(!canUseAudio || !canRecord()){
+    if(canUseAudio) wrap.appendChild(el("div","rec-msg", t("micFallback")));
+    wrap.appendChild(buildText(item, card));
+    return wrap;
+  }
+
+  wrap.appendChild(buildRecorder(item, card));
+
+  if(mode === "voice_or_text"){
+    wrap.appendChild(buildText(item, card));
+  } else {
+    // reachable, but plainly addressed to the experimenter
+    const link = el("button","typelink", t("typeInstead"));
+    link.type = "button";
+    link.onclick = ()=>{
+      link.remove();
+      wrap.appendChild(buildText(item, card));
+    };
+    wrap.appendChild(link);
+    if(state.answers[item.id]){ link.remove(); wrap.appendChild(buildText(item, card)); }
+  }
   return wrap;
 }
 
@@ -963,16 +1161,24 @@ function renderSetup(){
   r2.appendChild(field(t("xdf"), inputEl("text", state.meta.xdf, v=>state.meta.xdf=v, "P01_exo-3.xdf")));
   s.appendChild(r2);
 
-  const go = el("button","btn primary", t("start"));
-  go.type="button";
-  go.onclick = ()=>{
+  function begin(mode){
     if(!state.meta.pid.trim()){ alert(t("pid")); return; }
+    state.mode = mode;
     state.answers={}; state.meta_extra={}; state.audio={};
     state.timing={ blockStart:new Date().toISOString(), itemFirst:{}, itemLast:{} };
     state.page = activePages()[0];
     state.view="q"; persist(); render();
-  };
-  s.appendChild(go);
+  }
+  const rowBtns = el("div","row");
+  rowBtns.style.gap = "10px";
+  const pre = el("button","btn", t("startPre"));
+  pre.type="button"; pre.style.flex="none";
+  pre.onclick = ()=> begin("pre");
+  const go = el("button","btn primary", t("start"));
+  go.type="button"; go.style.flex="none";
+  go.onclick = ()=> begin("post");
+  rowBtns.appendChild(pre); rowBtns.appendChild(go);
+  s.appendChild(rowBtns);
   scroll.appendChild(s);
 
   // running tally so the experimenter can see what is already in the file
@@ -1066,10 +1272,15 @@ function renderQuestions(){
 
   const head = el("div");
   head.style.cssText="margin-bottom:18px";
-  head.appendChild(el("h1", null, t("blockOf")
-    .replace("%1", state.meta.block).replace("%2", CONFIG.conditions.length)));
-  head.appendChild(el("div","lede", t("p"+state.page)));
+  head.appendChild(el("h1", null, state.mode==="pre" ? t("preTitle")
+    : t("blockOf").replace("%1", state.meta.block).replace("%2", CONFIG.conditions.length)));
+  head.appendChild(el("div","lede", t((state.mode==="pre"?"pre":"p")+state.page)));
   scroll.appendChild(head);
+
+  if(state.mode==="post" && items.some(i=>i.audio) && CONFIG.openEndedMode!=="text"
+     && CONFIG.enableAudio && canRecord()){
+    scroll.appendChild(el("div","pagenote", t("interviewNote")));
+  }
 
   items.forEach(item=>{
     const card = el("div","q");
@@ -1077,7 +1288,8 @@ function renderQuestions(){
     const hint = itemHint(item);
     if(hint) card.appendChild(el("div","q-hint", hint));
     let ctrl;
-    if(item.type==="borg") ctrl = buildBorg(item, card);
+    if(item.type==="num") ctrl = buildNum(item, card);
+    else if(item.type==="borg") ctrl = buildBorg(item, card);
     else if(item.type==="vas") ctrl = buildVAS(item, card, false);
     else if(item.type==="bipolar") ctrl = buildVAS(item, card, true);
     else if(item.type==="choice") ctrl = buildChoice(item, card);
@@ -1155,11 +1367,21 @@ function finishBlock(){
     rec.first_touch_ms[k] = state.timing.itemFirst[k]-t0;
     rec.last_touch_ms[k]  = state.timing.itemLast[k]-t0;
   });
+  if(state.mode==="pre"){
+    rec.block = 0;
+    rec.condition = "PRE_SESSION";
+    rec.is_exo = false;
+    rec.form_section = "pre_session_screening";
+  } else {
+    rec.form_section = "post_condition";
+  }
   state.records.push(rec);
-  state.meta.block = Number(state.meta.block)+1;
-  const i = CONFIG.conditions.findIndex(c=>c.code===state.meta.cond);
-  if(i>=0 && i+1<CONFIG.conditions.length) state.meta.cond = CONFIG.conditions[i+1].code;
-  state.meta.xdf = "";
+  if(state.mode!=="pre"){
+    state.meta.block = Number(state.meta.block)+1;
+    const i = CONFIG.conditions.findIndex(c=>c.code===state.meta.cond);
+    if(i>=0 && i+1<CONFIG.conditions.length) state.meta.cond = CONFIG.conditions[i+1].code;
+    state.meta.xdf = "";
+  }
   persist();
   state.view="done"; render();
 }
@@ -1169,8 +1391,8 @@ function renderDone(){
   const box = el("div","setup");
   box.style.textAlign="center";
   box.style.padding="56px 24px";
-  box.appendChild(el("div","big-ok", t("done")));
-  box.appendChild(el("div","note", t("doneSub")));
+  box.appendChild(el("div","big-ok", t(state.mode==="pre" ? "preDone" : "done")));
+  box.appendChild(el("div","note", t(state.mode==="pre" ? "preDoneSub" : "doneSub")));
   scroll.appendChild(box);
   const b = el("button","btn", t("backToSetup"));
   b.type="button"; b.onclick = ()=>{ state.view="setup"; render(); };
@@ -1182,7 +1404,7 @@ function renderDone(){
    8. EXPORT - long format, one row per item, ready for readtable()
    ================================================================== */
 function itemMeta(id){
-  const it = ITEMS.find(x=>x.id===id);
+  const it = ITEMS.concat(PRE_ITEMS).find(x=>x.id===id);
   if(it) return { construct: it.construct, type: it.type };
   if(id==="discomfort_intensity") return { construct:"discomfort_intensity", type:"vas" };
   return { construct:"", type:"" };
@@ -1191,7 +1413,7 @@ function csvCell(v){ return '"' + String(v==null?"":v).replace(/"/g,'""') + '"';
 
 function exportCSV(){
   if(!state.records.length){ alert(t("noRows")); return; }
-  const cols = ["study","form_version","participant_id","block","condition","is_exo","xdf_file",
+  const cols = ["study","form_version","form_section","participant_id","block","condition","is_exo","xdf_file",
                 "language","effort_scale","block_start","block_end","duration_ms",
                 "item_id","construct","item_type","position","value","discomfort_regions",
                 "first_touch_ms","last_touch_ms","audio_seconds"];
@@ -1201,7 +1423,7 @@ function exportCSV(){
       const m = itemMeta(id);
       const pos = r.presented_order.indexOf(id);
       lines.push([
-        r.study, r.form_version, r.participant_id, r.block, r.condition, r.is_exo?1:0, r.xdf_file,
+        r.study, r.form_version, r.form_section||"post_condition", r.participant_id, r.block, r.condition, r.is_exo?1:0, r.xdf_file,
         r.language, r.effort_scale, r.block_start, r.block_end, r.duration_ms,
         id, m.construct, m.type, pos<0?"":pos+1, r.answers[id],
         id==="discomfort"?r.discomfort_regions:"",
@@ -1213,7 +1435,7 @@ function exportCSV(){
     Object.keys(r.audio||{}).forEach(id=>{
       const a = r.audio[id];
       lines.push([
-        r.study, r.form_version, r.participant_id, r.block, r.condition, r.is_exo?1:0, r.xdf_file,
+        r.study, r.form_version, r.form_section||"post_condition", r.participant_id, r.block, r.condition, r.is_exo?1:0, r.xdf_file,
         r.language, r.effort_scale, r.block_start, r.block_end, r.duration_ms,
         id+"_audio", itemMeta(id).construct+"_audio", "audio", "", a.filename, "", "", "", a.seconds
       ].map(csvCell).join(","));
