@@ -9,7 +9,7 @@ GUI features
   * START / STOP broadcasting buttons  (real stream on/off: STOP destroys the
     LSL outlets -- the 7 IMU streams AND the marker stream -- so they vanish
     from the network, START re-creates them)
-  * Stopwatch (starts on a Start_* marker, freezes on the matching End_* marker)
+  * Stopwatch (starts on a *_Start marker, freezes on the matching *_End marker)
   * Event selector + Start / End buttons that push event labels to an
     'IMU_Markers' LSL stream (same idea as the GRF marker GUI)
 
@@ -43,7 +43,7 @@ MTW_IDS_ALLOWLIST = ["00B4D0C2", "00B4D0D0", "00B4D0C8", "00B4D0BF",
 
 PREFERRED_CHANNEL = 11          # Wireless channel (as in MT Manager)
 TARGET_RATE_HZ    = 60          # MT Manager "Rate (Hz)"
-ACCEPT_WINDOW_S   = 30.0        # How long to keep calling acceptConnection()
+ACCEPT_WINDOW_S   = 10.0        # How long to keep calling acceptConnection()
 
 LSL_PREFIX  = "Xsens_MTw2"
 LSL_TYPE    = "IMU"
@@ -58,12 +58,11 @@ SENSOR_ALIASES = {
 }
 
 # --- Events -----------------------------------------------------------------
-# Labels are generated as  Start_<event>  /  End_<event>.
+# Labels are generated as  <event>_Start  /  <event>_End.
 # Order below is the intended running order of the session.
 EVENTS = [
     # reference / posture
     "rest_seated",
-    "standing",
     # limb circling
     "right_leg_circling",
     "left_leg_circling",
@@ -76,23 +75,26 @@ EVENTS = [
     "left_hip_AbdAdd",
     "pelvis_motion",
     # exoskeleton assistance modes
-    "eco",
-    "aquaplus",
-    "sport",
-    "aqua",
-    "transparent",
-    "boost",
+    "NoExoPre_walking",
+    "Eco_walking",
+    "Aqua_walking",
+    "Aquaplus_walking",
+    "Sport_walking",
+    "Boost_walking",
+    "Transparent_walking",
+    "NoExoPost_walking",
     # trial / closing
-    "trial",
-    "standing_repeat",
+    "Pre_standing",
+    "Post_standing",
 ]
 # ===========================================================================
 
 
 def labels_for(event: str):
-    """Start_<event> / End_<event>, so the two labels of a pair can never
-    disagree on spelling."""
-    return f"Start_{event}", f"End_{event}"
+    """<event>_Start / <event>_End - the event name leads, the phase
+    trails, so the two labels of a pair can never disagree on spelling
+    AND alphabetical sorting groups each event's pair together."""
+    return f"{event}_Start", f"{event}_End"
 
 
 # --------------------------------------------------------------------------
