@@ -43,7 +43,7 @@ MTW_IDS_ALLOWLIST = ["00B4D0C2", "00B4D0D0", "00B4D0C8", "00B4D0BF",
 
 PREFERRED_CHANNEL = 11          # Wireless channel (as in MT Manager)
 TARGET_RATE_HZ    = 60          # MT Manager "Rate (Hz)"
-ACCEPT_WINDOW_S   = 30.0        # How long to keep calling acceptConnection()
+ACCEPT_WINDOW_S   = 10.0        # How long to keep calling acceptConnection()
 
 LSL_PREFIX  = "Xsens_MTw2"
 LSL_TYPE    = "IMU"

@@ -31,7 +31,7 @@ from pylsl import StreamInfo, StreamOutlet, local_clock
 N_FIELDS = 9        # 8 force channels + trailing counter
 
 
-def read_from_arduino(serial_port='COM11', baud_rate=1_000_000, timeout=1):
+def read_from_arduino(serial_port='COM8', baud_rate=1_000_000, timeout=1):
     """Open the serial port, wait out the Arduino DTR reset, flush the
     stale boot backlog, and return the serial object (or None)."""
     try:
@@ -60,7 +60,7 @@ def parse_data(line):
 
 
 def main():
-    serial_port = 'COM11'
+    serial_port = 'COM8'
     baud_rate   = 1_000_000
 
     ser = read_from_arduino(serial_port=serial_port, baud_rate=baud_rate)
