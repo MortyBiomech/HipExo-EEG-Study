@@ -37,7 +37,8 @@ tsv_mean_swing = NaN(num_sessions, 1); tsv_std_swing = NaN(num_sessions, 1);
 valid_conditions = cell(num_sessions, 1);
 
 % Paths setup
-mat_load_dir = fullfile('C:\2026SSArbeit\data\PilotTest2', subject_folder, experiment_day, 'processed_EMG');
+mat_load_dir = fullfile( ...
+    data_root, subject_folder, experiment_day, 'processed_EMG');
 bids_subj_dir = fullfile(bids_root, ['sub-', bids_subject_id]);
 
 % Defined event markers

@@ -1,5 +1,4 @@
-% Subject 4:  mapping from muscles to physical Delsys sensors.
-% maybe also Subject_5 ...
+% Subject P3_1:  mapping from muscles to physical Delsys sensors.
 %
 % IMPORTANT:
 %   SensorID is the unique Delsys DEC ID. 
@@ -21,13 +20,20 @@ muscle_name = {
     'Rectus femoris L';
     'Biceps femoris L';
     'Glutaeus maximus L';
-    % Neck
+
+    % Neck day1
+    % 'Trapezius R';
+    % 'Trapezius L';
+    % 'around Trapezius R';
+    % 'around Trapezius L';
+    % 'above Trapezius' % ch1 right， ch2 left
+
+    % Neck day2
     'Trapezius R';
     'Trapezius L';
-    'SCM R';
-    'SCM L';
-    % Face
-    'Zygomaticus'
+    'above Trapezius L';
+    'above Trapezius R';
+    'under Trapezius' % ch1 right， ch2 left
 };
 
 % The DEC IDs below correspond one-to-one to muscle_name rows 1-19.
@@ -42,7 +48,7 @@ sensor_type = [
     repmat({'DuoSensor'},     3, 1)
 ];
 
-subject_4 = table(sensor_dec_id, muscle_name, sensor_type, ...
+subject_P3_1 = table(sensor_dec_id, muscle_name, sensor_type, ...
     'VariableNames', {'SensorID', 'MuscleName', 'SensorType'});
 
 % Uncomment for a quick mapping check in MATLAB:

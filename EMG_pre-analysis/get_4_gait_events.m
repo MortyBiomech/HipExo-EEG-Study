@@ -68,7 +68,15 @@ for s = 1:num_sessions
     [streams, ~] = load_xdf(full_file_path);
     
     grf_idx = find(strcmp(cellfun(@(x) x.info.name, streams, 'UniformOutput', false), 'GRF'));
-    marker_idx = find(contains(cellfun(@(x) x.info.name, streams, 'UniformOutput', false), 'GRF_Marker', 'IgnoreCase', true));
+    stream_names = string(cellfun(@(x) x.info.name, streams, 'UniformOutput', false));
+
+    % PilotTest3 uses IMU_Markers. PilotTest2 uses GRF_Marker/GRF_Markers.
+    % If both streams exist, prefer IMU_Markers.
+    marker_idx = find(strcmpi(strtrim(stream_names), 'IMU_Markers'), 1);
+    if isempty(marker_idx)
+        marker_idx = find(contains(stream_names, 'GRF_Marker', ...
+            'IgnoreCase', true), 1);
+    end
     
     if isempty(grf_idx)
         warning('Missing GRF stream for %s. Skipping.', current_session);
@@ -79,32 +87,41 @@ for s = 1:num_sessions
     
     % 2. Handle cases where markers are missing and guide the system into manual mode
     if isempty(marker_idx)
-        fprintf('>> No GRF_Marker stream found. Will default to manual selection.\n');
-        marker_labels = {}; % Set to an empty set, which naturally triggers the subsequent manual selection fallback
+        fprintf('>> No IMU_Markers or GRF_Marker(s) stream found. Will default to manual selection.\n');
+        marker_labels = strings(0, 1);
+        marker_times = zeros(0, 1);
+        marker_stream_name = "";
     else
-        GRF_Marker_Stream = streams{marker_idx(1)};
-        marker_labels = GRF_Marker_Stream.time_series;
-        
-        if iscell(marker_labels) && ~isempty(marker_labels) && iscell(marker_labels{1})
-            marker_labels = cellfun(@(x) x{1}, marker_labels, 'UniformOutput', false);
-        end
+        Marker_Stream = streams{marker_idx(1)};
+        marker_stream_name = stream_names(marker_idx(1));
+        marker_labels = flattenMarkerLabels(Marker_Stream.time_series);
+        marker_times = double(Marker_Stream.time_stamps(:));
+
+        n_markers = min(numel(marker_labels), numel(marker_times));
+        marker_labels = marker_labels(1:n_markers);
+        marker_times = marker_times(1:n_markers);
+        fprintf('>> Using marker stream: %s\n', char(marker_stream_name));
     end
     
     %% 4. Define Walking Window (Auto via Markers or Manual)
-    idx_start = find(contains(marker_labels, 'START_') & ~contains(marker_labels, 'standing'), 1);
-    idx_end   = find(contains(marker_labels, 'END_') & ~contains(marker_labels, 'standing'), 1);
-    
+    % Remove all standing markers, then pair Start_xxx with the later
+    % End_xxx that has exactly the same suffix.
+    [idx_start, idx_end] = findNonStandingMarkerPair( ...
+        marker_labels, marker_times);
+
     auto_success = false;
     
     if ~isempty(idx_start) && ~isempty(idx_end)
-        final_start = GRF_Marker_Stream.time_stamps(idx_start);
-        final_end   = GRF_Marker_Stream.time_stamps(idx_end);
-        start_label = marker_labels{idx_start};
-        end_label   = marker_labels{idx_end};
+        final_start = marker_times(idx_start);
+        final_end   = marker_times(idx_end);
+        start_label = char(marker_labels(idx_start));
+        end_label   = char(marker_labels(idx_end));
         fprintf('>> Auto-detection successful. Using markers: [%s] to [%s]\n', start_label, end_label);
         auto_success = true;
     else
-        fprintf('>> No valid START/END markers found. Manual selection required.\n');
+        fprintf(['>> No complete non-standing Start_xxx/End_xxx pair was ' ...
+            'found in %s. Manual selection required.\n'], ...
+            char(marker_stream_name));
     end
     
     % Manual Selection Fallback 
@@ -206,7 +223,8 @@ for s = 1:num_sessions
     all_events = all_events(sort_order);
     
     % DYNAMIC SAVE PATH
-    save_dir = fullfile('C:\2026SSArbeit\data\PilotTest2', subject_folder, experiment_day, 'processed_EMG');
+    save_dir = fullfile( ...
+    data_root, subject_folder, experiment_day, 'processed_EMG');
     
     if ~exist(save_dir, 'dir')
         mkdir(save_dir);
@@ -223,3 +241,109 @@ for s = 1:num_sessions
 end
 
 fprintf('\nAll sessions processed! Gait events saved in the processed_EMG folder.\n');
+
+function labels = flattenMarkerLabels(timeSeries)
+    labels = strings(numel(timeSeries), 1);
+    for ii = 1:numel(timeSeries)
+        if iscell(timeSeries)
+            value = timeSeries{ii};
+        else
+            value = timeSeries(ii);
+        end
+        while iscell(value) && ~isempty(value)
+            value = value{1};
+        end
+        textValue = string(value);
+        if ~isempty(textValue)
+            labels(ii) = textValue(1);
+        end
+    end
+end
+
+function [startIndex, endIndex] = findNonStandingMarkerPair(labels, times)
+    startIndex = [];
+    endIndex = [];
+
+    %% 1. Standardize marker labels and timestamps
+    labels = strtrim(string(labels(:)));
+    times  = double(times(:));
+
+    nMarkers = min(numel(labels), numel(times));
+    labels = labels(1:nMarkers);
+    times  = times(1:nMarkers);
+
+    if nMarkers == 0
+        return;
+    end
+
+    normalizedLabels = lower(labels);
+
+    %% 2. Remove every marker containing "standing"
+    isStanding = contains(normalizedLabels, "standing");
+
+    %% 3. Support both marker naming formats
+    % Format A:
+    %   Start_boost / End_boost
+    %
+    % Format B:
+    %   NoExoPre_walking_Start / NoExoPre_walking_End
+
+    isStartMarker = ...
+        startsWith(normalizedLabels, "start_") | ...
+        endsWith(normalizedLabels, "_start");
+
+    isEndMarker = ...
+        startsWith(normalizedLabels, "end_") | ...
+        endsWith(normalizedLabels, "_end");
+
+    startCandidates = find(isStartMarker & ~isStanding);
+    endCandidates   = find(isEndMarker   & ~isStanding);
+
+    if isempty(startCandidates) || isempty(endCandidates)
+        return;
+    end
+
+    %% 4. Extract the common part of each marker name
+    % Start_boost                -> boost
+    % End_boost                  -> boost
+    % NoExoPre_walking_Start     -> noexopre_walking
+    % NoExoPre_walking_End       -> noexopre_walking
+
+    startKeys = regexprep( ...
+        normalizedLabels(startCandidates), ...
+        '^start_|_start$', '');
+
+    endKeys = regexprep( ...
+        normalizedLabels(endCandidates), ...
+        '^end_|_end$', '');
+
+    %% 5. Search from the latest Start marker backwards
+    % This ensures that the last complete pair is selected.
+    [~, startOrder] = sort(times(startCandidates), 'descend');
+
+    startCandidates = startCandidates(startOrder);
+    startKeys       = startKeys(startOrder);
+
+    for ii = 1:numel(startCandidates)
+        candidateStart = startCandidates(ii);
+        startKey = startKeys(ii);
+
+        % The End marker must:
+        % 1. Have the same name/key
+        % 2. Occur after the Start marker
+        matchingEnds = endCandidates( ...
+            endKeys == startKey & ...
+            times(endCandidates) > times(candidateStart));
+
+        if isempty(matchingEnds)
+            continue;
+        end
+
+        % Select the first matching End after this Start
+        [~, firstEnd] = min(times(matchingEnds));
+
+        startIndex = candidateStart;
+        endIndex   = matchingEnds(firstEnd);
+        return;
+    end
+end

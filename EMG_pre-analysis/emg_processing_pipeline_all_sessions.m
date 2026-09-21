@@ -1,8 +1,9 @@
-%% Dynamic 22-channel EMG gait-cycle pipeline (subject_4 and later)
+%% Dynamic 22-channel EMG gait-cycle pipeline (subject_P3_1 and later)
 % INPUT OPTIONS:
-%   1) XDF: select all 19 Delsys sensors strictly by DEC SensorID. The
-%      16 Avanti sensors contribute one channel each and the 3 Duo sensors
-%      contribute two channels each (22 EMG channels in total).
+%   1) XDF: select the single 22-channel Delsys EMG stream, then map its
+%      individual channels strictly by DEC SensorID. The 16 Avanti sensors
+%      contribute one channel each and the 3 Duo sensors contribute two
+%      channels each (22 EMG channels in total).
 %   2) BDF: load the same 22 converted BIDS EMG channels and read HS/TO
 %      from events.tsv.
 %
@@ -15,38 +16,133 @@ clear; clc;
 %% ---------------- USER SETTINGS: edit this section only ----------------
 run('config_paths.m');
 
-% Use a subject-specific mapping when it exists. For subject_4 and later, the
-% subject_4 DEC-ID mapping is the fallback because the same physical sensors
+% Use a subject-specific mapping when it exists. For subject_P3_1 and later, the
+% subject_P3_1 DEC-ID mapping is the fallback because the same physical sensors
 % remain assigned to the same muscle order. Pair numbers are never used.
+
 subjectInfoScript = [current_subject '_infos.m'];
 if exist(subjectInfoScript, 'file') == 2
     run(subjectInfoScript);
     subjectInfo = eval(current_subject);
 else
-    warning('%s was not found; using subject_4_infos.m DEC-ID mapping.', ...
+    warning('%s was not found; using subject_P3_1_infos.m DEC-ID mapping.', ...
         subjectInfoScript);
-    run('subject_4_infos.m');
-    subjectInfo = subject_4;
+    run('subject_P3_1_infos.m');
+    subjectInfo = subject_P3_1;
 end
 sensorMap = buildFullChannelMap(subjectInfo);
 fprintf('Subject mapping: %d sensors -> %d EMG channels.\n', ...
     numel(unique(sensorMap.SensorID)), height(sensorMap));
 
+% Sessions containing these keywords will never be processed
+excludedSessionKeywords = ["calib"];
+
 % Empty string = process every session found for run_id. Example: use
 % "Exo3_sport" to process only the session whose path contains that text.
-sessionFilter = "NoExoPre";
+
+% P3_1 day1
+
+% sessionFilter = "NoExoPre";
+% sessionFilter = "Exo1_sport";
+% sessionFilter = "Exo2_aqua";
+% sessionFilter = "Exo3_transparent";
+% sessionFilter = "Exo4_eco";
+% sessionFilter = "Exo5_boost";
+% sessionFilter = "Exo6_aquaplus";
+% sessionFilter = "NoExoPost";
+
+% day2
+
+% sessionFilter = "NoExoPre";
+% sessionFilter = "Exo1_eco";
+% sessionFilter = "Exo2_aquaplus";
+% sessionFilter = "Exo3_transparent";
+% sessionFilter = "Exo4_boost";
+% sessionFilter = "Exo5_aqua";
+% sessionFilter = "Exo6_sport";
+% sessionFilter = "NoExoPost";
+
+% P3_2 day1
+
+% sessionFilter = "NoExoPre";
+% sessionFilter = "Exo1_aquaplus";
+% sessionFilter = "Exo2_transparent";
+% sessionFilter = "Exo3_sport";
+% sessionFilter = "Exo4_eco";
+% sessionFilter = "Exo5_aqua";
+% sessionFilter = "Exo6_boost";
+% sessionFilter = "NoExoPost";
+
+% day2
+
+% sessionFilter = "NoExoPre";
+% sessionFilter = "Exo1_eco";
+% sessionFilter = "Exo2_aqua";
+% sessionFilter = "Exo3_transparent";
+% sessionFilter = "Exo4_boost";
+% sessionFilter = "Exo5_aquaplus";
+% sessionFilter = "Exo6_sport";
+% sessionFilter = "NoExoPost";
+
+% P3_3 day1
+
+% sessionFilter = "";
+% sessionFilter = "NoExoPre";
+% sessionFilter = "Exo1_sport";
+% sessionFilter = "Exo2_eco";
+% sessionFilter = "Exo3_aqua";
+% sessionFilter = "Exo4_transparent";
+% sessionFilter = "Exo5_boost";
+% sessionFilter = "Exo6_aquaplus";
+% sessionFilter = "NoExoPost";
+
+% day2
+
+% sessionFilter = "NoExoPre";
+% sessionFilter = "Exo1_aquaplus";
+% sessionFilter = "Exo2_transparent";
+% sessionFilter = "Exo3_boost";
+% sessionFilter = "Exo4_eco";
+% sessionFilter = "Exo5_aqua";
+% sessionFilter = "Exo6_sport";
+% sessionFilter = "NoExoPost";
+
+% P3_4 day1
+
+% sessionFilter = "";
+% sessionFilter = "NoExoPre";
+% sessionFilter = "Exo1_sport";
+% sessionFilter = "Exo2_aqua";
+% sessionFilter = "Exo3_aquaplus";
+% sessionFilter = "Exo4_boost";
+% sessionFilter = "Exo5_eco";
+% sessionFilter = "Exo6_transparent";
+sessionFilter = "NoExoPost";
+
+% day2
+
+% sessionFilter = "NoExoPre";
+% sessionFilter = "Exo1_aquaplus";
+% sessionFilter = "Exo2_transparent";
+% sessionFilter = "Exo3_boost";
+% sessionFilter = "Exo4_eco";
+% sessionFilter = "Exo5_aqua";
+% sessionFilter = "Exo6_sport";
+% sessionFilter = "NoExoPost";
 
 % Existing GRF layout retained from get_4_gait_events.m.  Confirm it once by
 % checking the validation figure.  Indices refer to the 9 channels in GRF.
 grfRightChannels = [1 4 5 8];
 grfLeftChannels  = [2 3 6 7];
 
-% XDF only: [] first tries GRF_Marker START_/END_ automatically and otherwise
-% analyzes the whole GRF recording. A manual [start end] uses LSL seconds.
+% XDF only: [] uses the first complete Start_xxx/End_xxx pair from
+% IMU_Markers after removing every marker that contains "standing".
+% This Sensor-ID pipeline is intended for P3_1 and later recordings only.
+% If the required stream or labels are missing, the whole GRF recording is
+% analyzed. A manual [start end] uses LSL seconds.
 analysisWindowLSL = [];
 
-% Processing settings.  The actual rate is read from timestamps (about 1259 Hz
-% in this test), not assumed to be 2148 Hz.
+% Processing settings.  
 bandpassHz       = [20 450];
 envelopeLowpassHz = 8;
 normaliseToPercent = true;   % each muscle scaled to its valid-cycle maximum
@@ -54,36 +150,32 @@ showValidationFigures = true;
 showCleanEpochBrowser = true; % EEGLAB scroll plot after both rejection steps
 saveCleanEpochSet = true;     % save clean epochs with gait events as .set
 showOverlapEpochFigure = true; % continuous timeline with overlapping windows
-
 overlapDisplayFirstEpoch = 1; % first retained epoch shown in overlap figure
 overlapDisplayCount = 8;      % use Inf to display every retained epoch
 %% ------------------------------------------------------------------------
 
 %% INPUT BLOCK A - BDF/BIDS (COMMENT this whole block when using XDF)
-
 % inputMode = "BDF";
 % bdfSubjectDir = fullfile(bids_root, ['sub-' bids_subject_id]);
 % inputFiles = dir(fullfile(bdfSubjectDir, 'ses-*', 'emg', ...
 %     sprintf('*run-%s*_emg.bdf', run_id)));
 
 %% INPUT BLOCK B - XDF (UNCOMMENT this block and comment BLOCK A for XDF)
-
 inputMode = "XDF";
 inputFiles = dir(fullfile(data_path, '**', ...
     sprintf('*run-%s_eeg.xdf', run_id)));
 
-inputFiles = filterAndSortInputFiles(inputFiles, sessionFilter);
+inputFiles = filterAndSortInputFiles( ...
+    inputFiles, sessionFilter, excludedSessionKeywords);
 assert(~isempty(inputFiles), ...
     'No %s files were found for run-%s and session filter "%s".', ...
     inputMode, run_id, sessionFilter);
 
 eeglab nogui;
-
 if inputMode == "BDF"
     assert(exist('pop_biosig', 'file') == 2, ...
         ['pop_biosig is not on the MATLAB path. Install/enable the ' ...
          'EEGLAB BIOSIG plugin before reading BDF files.']);
-
 elseif inputMode == "XDF"
     assert(exist('load_xdf', 'file') == 2, ...
         'load_xdf is not on the MATLAB path. Start EEGLAB/xdfimport first.');
@@ -142,7 +234,8 @@ if inputMode == "XDF"
     if isempty(analysisWindowLSL)
         automaticWindow = getAutomaticWalkingWindow(streams);
         if isempty(automaticWindow)
-            warning(['No usable walking START_/END_ marker pair was found. ' ...
+            warning(['IMU_Markers does not contain a complete non-standing ' ...
+                'Start_xxx/End_xxx pair. ' ...
                 'The entire GRF recording will be analyzed.']);
             use = true(size(grfT));
         else
@@ -602,7 +695,38 @@ function sensorMap = buildFullChannelMap(subjectInfo)
         subjectInfo.Properties.VariableNames)), ...
         'The subject info table must contain SensorID and MuscleName.');
 
-    expectedMuscles = [
+    nSensors = height(subjectInfo);
+    assert(nSensors == 19, ...
+        'Expected 19 Delsys sensor rows, but subject info contains %d.', ...
+        nSensors);
+
+    % Sensor placement order, SensorID order and MuscleName order are the
+    % same in the subject-info table. Do not reorder rows by muscle name.
+    musclesBySensor = strtrim(string(subjectInfo.MuscleName(:)));
+    sensorIdsBySensor = strtrim(string(subjectInfo.SensorID(:)));
+    assert(all(~ismissing(musclesBySensor) & strlength(musclesBySensor) > 0), ...
+        'Every sensor row must contain a non-empty MuscleName.');
+    assert(all(~ismissing(sensorIdsBySensor) & ...
+        strlength(sensorIdsBySensor) > 0), ...
+        'Every sensor row must contain a SensorID.');
+    assert(all(isfinite(str2double(sensorIdsBySensor))), ...
+        'Every SensorID must be a valid decimal number.');
+    assert(numel(unique(sensorIdsBySensor)) == nSensors, ...
+        'Each of the 19 sensors must have one unique DEC SensorID.');
+
+    if ismember('SensorType', subjectInfo.Properties.VariableNames)
+        sensorTypesBySensor = strtrim(string(subjectInfo.SensorType(:)));
+    else
+        % If SensorType is absent, use the established physical order:
+        % rows 1-16 are Avanti and rows 17-19 are Duo sensors.
+        sensorTypesBySensor = repmat("AvantiSensor", nSensors, 1);
+        sensorTypesBySensor(17:19) = "DuoSensor";
+    end
+
+    % Preserve established short labels for the lower-limb channels. New or
+    % changed names (for example the day1/day2 neck placements) are converted
+    % automatically and are not required to appear in this optional list.
+    knownMuscles = [
         "Tibialis anterior R";
         "Soleus R";
         "Gastrocnemius cap. mediale R";
@@ -618,12 +742,9 @@ function sensorMap = buildFullChannelMap(subjectInfo)
         "Biceps femoris L";
         "Glutaeus maximus L";
         "Trapezius R";
-        "Trapezius L";
-        "SCM R";
-        "SCM L";
-        "Zygomaticus"
+        "Trapezius L"
     ];
-    shortNamesBySensor = [
+    knownShortNames = [
         "TibAnt_R";
         "Soleus_R";
         "GastMed_R";
@@ -639,38 +760,27 @@ function sensorMap = buildFullChannelMap(subjectInfo)
         "BicepsFem_L";
         "GlutMax_L";
         "Trapezius_R";
-        "Trapezius_L";
-        "SCM_R";
-        "SCM_L";
-        "Zygomaticus"
+        "Trapezius_L"
     ];
 
-    availableMuscles = strtrim(string(subjectInfo.MuscleName));
-    assert(height(subjectInfo) == numel(expectedMuscles), ...
-        'Expected 19 Delsys sensor rows, but subject info contains %d.', ...
-        height(subjectInfo));
-
-    if ismember('SensorType', subjectInfo.Properties.VariableNames)
-        availableSensorTypes = strtrim(string(subjectInfo.SensorType));
-    else
-        % Older subject files do not contain SensorType. The established
-        % placement still uses rows 1-16 as Avanti and rows 17-19 as Duo.
-        availableSensorTypes = repmat("AvantiSensor", height(subjectInfo), 1);
-        availableSensorTypes(17:19) = "DuoSensor";
+    shortNamesBySensor = strings(nSensors,1);
+    for ii = 1:nSensors
+        knownHit = find(strcmpi(knownMuscles, musclesBySensor(ii)), 1);
+        if ~isempty(knownHit)
+            shortNamesBySensor(ii) = knownShortNames(knownHit);
+        else
+            generatedName = regexprep(musclesBySensor(ii), ...
+                '[^A-Za-z0-9]+', '_');
+            generatedName = regexprep(generatedName, '^_+|_+$', '');
+            if strlength(generatedName) == 0
+                generatedName = "Sensor_" + ii;
+            end
+            shortNamesBySensor(ii) = generatedName;
+        end
     end
-
-    sensorIdsBySensor = strings(numel(expectedMuscles),1);
-    sensorTypesBySensor = strings(numel(expectedMuscles),1);
-    for ii = 1:numel(expectedMuscles)
-        hit = find(strcmpi(availableMuscles, expectedMuscles(ii)), 1);
-        assert(~isempty(hit), 'Muscle "%s" is missing from subject info.', ...
-            expectedMuscles(ii));
-        idValue = string(subjectInfo.SensorID(hit));
-        sensorIdsBySensor(ii) = idValue(1);
-        sensorTypesBySensor(ii) = availableSensorTypes(hit);
-    end
-    assert(numel(unique(sensorIdsBySensor)) == 19, ...
-        'Each of the 19 sensors must have one unique DEC SensorID.');
+    shortNamesBySensor = string(matlab.lang.makeUniqueStrings( ...
+        cellstr(shortNamesBySensor)));
+    shortNamesBySensor = shortNamesBySensor(:);
 
     isAvanti = strcmpi(sensorTypesBySensor, 'AvantiSensor');
     isDuo = strcmpi(sensorTypesBySensor, 'DuoSensor');
@@ -679,7 +789,7 @@ function sensorMap = buildFullChannelMap(subjectInfo)
         ['Expected exactly 16 AvantiSensor rows and 3 DuoSensor rows in ' ...
          'subject info.']);
 
-    channelCountBySensor = ones(numel(expectedMuscles),1);
+    channelCountBySensor = ones(nSensors,1);
     channelCountBySensor(isDuo) = 2;
     totalChannels = sum(channelCountBySensor);
     assert(totalChannels == 22, ...
@@ -702,14 +812,14 @@ function sensorMap = buildFullChannelMap(subjectInfo)
     gaitOrders = [1; 2; 3; 1; 2; 3];
 
     outputRow = 0;
-    for sensorRow = 1:numel(expectedMuscles)
+    for sensorRow = 1:nSensors
         for channelWithinSensor = 1:channelCountBySensor(sensorRow)
             outputRow = outputRow + 1;
             sensorIndex(outputRow) = sensorRow;
             sensorIds(outputRow) = sensorIdsBySensor(sensorRow);
             sensorTypes(outputRow) = sensorTypesBySensor(sensorRow);
             sensorChannels(outputRow) = channelWithinSensor;
-            sourceMuscles(outputRow) = expectedMuscles(sensorRow);
+            sourceMuscles(outputRow) = musclesBySensor(sensorRow);
 
             channelName = shortNamesBySensor(sensorRow);
             if channelCountBySensor(sensorRow) == 2
@@ -718,7 +828,7 @@ function sensorMap = buildFullChannelMap(subjectInfo)
             channelNames(outputRow) = channelName;
 
             gaitHit = find(strcmpi(gaitMuscles, ...
-                expectedMuscles(sensorRow)), 1);
+                musclesBySensor(sensorRow)), 1);
             if ~isempty(gaitHit)
                 gaitPlotSide(outputRow) = gaitSides(gaitHit);
                 gaitPlotOrder(outputRow) = gaitOrders(gaitHit);
@@ -734,37 +844,119 @@ function sensorMap = buildFullChannelMap(subjectInfo)
         'GaitPlotOrder','Column'});
 end
 
-function files = filterAndSortInputFiles(files, sessionFilter)
-    if isempty(files), return; end
+function files = filterAndSortInputFiles( ...
+        files, sessionFilter, excludedSessionKeywords)
+
+    if isempty(files)
+        return;
+    end
+
+    % Default settings
+    if nargin < 2 || isempty(sessionFilter)
+        sessionFilter = "";
+    end
+
+    % "calib" can match calibration, calib, GRF_calibration, etc.
+    if nargin < 3 || isempty(excludedSessionKeywords)
+        excludedSessionKeywords = ["calib", "setup"];
+    end
+
+    sessionFilter = string(sessionFilter);
+    excludedSessionKeywords = string(excludedSessionKeywords);
 
     paths = string(arrayfun(@(item) ...
         fullfile(item.folder, item.name), files, ...
         'UniformOutput', false));
+    paths = paths(:);
+
+    % Extract session folder names
+    sessionNames = strings(numel(files), 1);
+    for ii = 1:numel(files)
+        sessionNames(ii) = string(getSessionFolder(paths(ii)));
+    end
+
+    %% Always remove calibration/setup sessions
+    isExcluded = false(numel(files), 1);
+
+    for kk = 1:numel(excludedSessionKeywords)
+        keyword = excludedSessionKeywords(kk);
+
+        if strlength(keyword) > 0
+            isExcluded = isExcluded | contains( ...
+                sessionNames, keyword, ...
+                'IgnoreCase', true);
+        end
+    end
+
+    if any(isExcluded)
+        fprintf('Skipping %d excluded recording(s):\n', ...
+            nnz(isExcluded));
+
+        excludedIndices = find(isExcluded);
+        for ii = 1:numel(excludedIndices)
+            idx = excludedIndices(ii);
+            fprintf('   - %s\n', paths(idx));
+        end
+    end
+
+    files = files(~isExcluded);
+    paths = paths(~isExcluded);
+    sessionNames = sessionNames(~isExcluded);
+
+    if isempty(files)
+        return;
+    end
+
+    %% Apply optional positive session filter
     if strlength(sessionFilter) > 0
-        keep = contains(paths, sessionFilter, 'IgnoreCase', true);
+        keep = contains( ...
+            sessionNames, sessionFilter, ...
+            'IgnoreCase', true);
+
         files = files(keep);
         paths = paths(keep);
+        sessionNames = sessionNames(keep);
     end
-    if isempty(files), return; end
 
-    orderKey = 50 * ones(numel(files),1);
+    if isempty(files)
+        return;
+    end
+
+    %% Sort sessions
+    orderKey = 50 * ones(numel(files), 1);
+
     for ii = 1:numel(files)
-        sessionName = lower(getSessionFolder(paths(ii)));
+        sessionName = lower(sessionNames(ii));
+
         if contains(sessionName, 'noexopre')
             orderKey(ii) = 0;
+
         elseif contains(sessionName, 'noexopost')
             orderKey(ii) = 99;
+
         else
-            token = regexp(sessionName, 'exo(\d+)', 'tokens', 'once');
+            token = regexp( ...
+                char(sessionName), ...
+                'exo(\d+)', ...
+                'tokens', ...
+                'once');
+
             if ~isempty(token)
                 orderKey(ii) = 10 + str2double(token{1});
             end
         end
     end
+
     originalIndex = (1:numel(files))';
-    sortingTable = table(orderKey, lower(paths(:)), originalIndex, ...
-        'VariableNames', {'OrderKey','Path','OriginalIndex'});
-    sortingTable = sortrows(sortingTable, {'OrderKey','Path'});
+
+    sortingTable = table( ...
+        orderKey, lower(paths), originalIndex, ...
+        'VariableNames', ...
+        {'OrderKey', 'Path', 'OriginalIndex'});
+
+    sortingTable = sortrows( ...
+        sortingTable, {'OrderKey', 'Path'});
+
     files = files(sortingTable.OriginalIndex);
 end
 
@@ -914,120 +1106,162 @@ end
 
 function [emgData, emgT, emgMeta, sensorMap] = ...
         loadXdfEmgBySensorId(streams, sensorMap)
-    emgStreams = {};
-    streamIds = strings(0,1);
-    streamLabels = strings(0,1);
+    % Subject 4 and later store all 22 EMG channels in ONE XDF stream.
+    % Sensor IDs therefore belong to channel metadata, not to separate
+    % streams. Pair information is intentionally never used.
+    emgStreamIndices = zeros(0,1);
+    emgStreamLabels = strings(0,1);
+    emgChannelCounts = zeros(0,1);
     for ii = 1:numel(streams)
         if ~strcmpi(getInfoText(streams{ii}.info, 'type'), 'EMG') || ...
                 isempty(streams{ii}.time_stamps)
             continue;
         end
-        emgStreams{end+1,1} = streams{ii}; %#ok<AGROW>
-        streamIds(end+1,1) = extractSensorId(streams{ii}); %#ok<AGROW>
-        streamLabels(end+1,1) = ...
+        nSamples = numel(streams{ii}.time_stamps);
+        candidateData = orientStreamData(streams{ii}.time_series, nSamples);
+        emgStreamIndices(end+1,1) = ii; %#ok<AGROW>
+        emgStreamLabels(end+1,1) = ...
             getInfoText(streams{ii}.info, 'name'); %#ok<AGROW>
+        emgChannelCounts(end+1,1) = size(candidateData,1); %#ok<AGROW>
     end
-    assert(~isempty(emgStreams), 'No non-empty EMG streams were found in XDF.');
+    assert(~isempty(emgStreamIndices), ...
+        'No non-empty EMG stream was found in XDF.');
 
-    disp('EMG streams found in XDF (Pair information is ignored):');
-    disp(table((1:numel(emgStreams))', streamIds, streamLabels, ...
-        'VariableNames', {'Stream','SensorID','StreamLabel'}));
+    disp('EMG streams found in XDF:');
+    disp(table(emgStreamIndices, emgChannelCounts, emgStreamLabels, ...
+        'VariableNames', {'StreamIndex','ChannelCount','StreamLabel'}));
 
-    selectedStreams = cell(height(sensorMap),1);
-    selectedLabels = strings(height(sensorMap),1);
-    selectedStreamIndex = zeros(height(sensorMap),1);
-    for ii = 1:height(sensorMap)
-        requiredId = string(sensorMap.SensorID(ii));
-        hit = find(streamIds == requiredId);
-        assert(numel(hit) == 1, ...
-            ['Expected exactly one XDF EMG stream with DEC SensorID %s for ' ...
-             '%s, but found %d. Pair numbers are intentionally not used.'], ...
-            requiredId, sensorMap.Muscle(ii), numel(hit));
-        selectedStreams{ii} = emgStreams{hit};
-        selectedLabels(ii) = streamLabels(hit);
-        selectedStreamIndex(ii) = hit;
+    targetStream = find(emgChannelCounts == height(sensorMap));
+    assert(isscalar(targetStream), ...
+        ['Expected exactly one XDF EMG stream containing %d channels, ' ...
+         'but found %d.'], height(sensorMap), numel(targetStream));
+
+    sourceStreamIndex = emgStreamIndices(targetStream);
+    streamLabel = emgStreamLabels(targetStream);
+    emgStream = streams{sourceStreamIndex};
+    emgT = double(emgStream.time_stamps(:)');
+    sourceData = orientStreamData(emgStream.time_series, numel(emgT));
+    assert(numel(emgT) > 20, 'The XDF EMG stream is too short.');
+
+    [channelIds, channelLabels] = extractChannelMetadata( ...
+        emgStream, size(sourceData,1));
+
+    disp('Channels found inside the selected XDF EMG stream:');
+    disp(table((1:size(sourceData,1))', channelIds, channelLabels, ...
+        'VariableNames', {'SourceColumn','SensorID','ChannelLabel'}));
+
+    missingMetadata = find(strlength(channelIds) == 0);
+    assert(isempty(missingMetadata), ...
+        ['The following XDF EMG columns have no serial_number_dec value: %s. ' ...
+         'Sensor mapping cannot be verified without channel-level DEC IDs.'], ...
+        mat2str(missingMetadata(:)'));
+
+    sourceColumns = zeros(height(sensorMap),1);
+    uniqueSensorIds = unique(string(sensorMap.SensorID), 'stable');
+    for sensorIndex = 1:numel(uniqueSensorIds)
+        requiredId = uniqueSensorIds(sensorIndex);
+        mapRows = find(string(sensorMap.SensorID) == requiredId);
+        sourceHits = find(channelIds == requiredId);
+        expectedChannels = numel(mapRows);
+        assert(numel(sourceHits) == expectedChannels, ...
+            ['DEC SensorID %s should occur in %d channel(s) for %s, ' ...
+             'but it occurs in %d XDF channel(s). Pair information is ignored.'], ...
+            requiredId, expectedChannels, ...
+            sensorMap.SourceMuscle(mapRows(1)), numel(sourceHits));
+
+        % sourceHits is in physical XDF channel order. SensorChannel 1/2
+        % selects the first/second channel of each DuoSensor.
+        for rowIndex = reshape(mapRows, 1, [])
+            channelWithinSensor = sensorMap.SensorChannel(rowIndex);
+            sourceColumns(rowIndex) = sourceHits(channelWithinSensor);
+        end
     end
 
-    firstTimes = cellfun(@(s) double(s.time_stamps(1)), selectedStreams);
-    lastTimes = cellfun(@(s) double(s.time_stamps(end)), selectedStreams);
-    commonStart = max(firstTimes);
-    commonEnd = min(lastTimes);
-    assert(commonEnd > commonStart, ...
-        'The selected EMG streams do not share an overlapping time range.');
+    assert(numel(unique(sourceColumns)) == height(sensorMap) && ...
+           all(sourceColumns >= 1), ...
+        'The 22 XDF source channels could not be mapped one-to-one.');
 
-    streamLengths = cellfun(@(s) numel(s.time_stamps), selectedStreams);
-    [~, referenceIndex] = min(abs(streamLengths - median(streamLengths)));
-    referenceTimes = double(selectedStreams{referenceIndex}.time_stamps(:)');
-    emgT = referenceTimes(referenceTimes >= commonStart & ...
-        referenceTimes <= commonEnd);
-    assert(numel(emgT) > 20, 'The common EMG time range is too short.');
-
-    emgData = zeros(height(sensorMap), numel(emgT));
-    for ii = 1:height(sensorMap)
-        stream = selectedStreams{ii};
-        sourceTimes = double(stream.time_stamps(:)');
-        sourceData = orientStreamData(stream.time_series, numel(sourceTimes));
-        sourceChannel = sensorMap.SensorChannel(ii);
-        requiredId = string(sensorMap.SensorID(ii));
-        expectedChannels = max(sensorMap.SensorChannel( ...
-            string(sensorMap.SensorID) == requiredId));
-        assert(size(sourceData,1) >= expectedChannels, ...
-            ['XDF stream with DEC SensorID %s should provide %d channel(s) ' ...
-             'for %s, but only %d were found.'], ...
-            requiredId, expectedChannels, sensorMap.SourceMuscle(ii), ...
-            size(sourceData,1));
-        sourceSignal = double(sourceData(sourceChannel,:));
-        [sourceTimes, uniqueIndex] = unique(sourceTimes, 'stable');
-        sourceSignal = sourceSignal(uniqueIndex);
-        emgData(ii,:) = interp1(sourceTimes, sourceSignal, emgT, ...
-            'linear');
-    end
+    % One stream means every channel already has the same timestamps. Only
+    % reorder rows into the established muscle/channel order; no inter-stream
+    % interpolation is necessary.
+    emgData = double(sourceData(sourceColumns,:));
     assert(all(isfinite(emgData(:))), ...
-        'Non-finite values appeared while aligning XDF EMG streams.');
+        'The mapped XDF EMG data contain non-finite values.');
 
-    sensorMap.SourceStream = selectedStreamIndex;
-    sensorMap.SourceColumn = sensorMap.SensorChannel;
+    sensorMap.SourceStream = repmat(sourceStreamIndex, height(sensorMap), 1);
+    sensorMap.SourceColumn = sourceColumns;
     sensorMap.Column = (1:height(sensorMap))';
-    emgMeta = table(selectedStreamIndex, string(sensorMap.SensorID), ...
-        string(sensorMap.SensorType), sensorMap.SensorChannel, ...
-        selectedLabels, ...
-        'VariableNames', {'SourceStream','SensorID','SensorType', ...
-        'SensorChannel','StreamLabel'});
+    emgMeta = table(sensorMap.SourceStream, sourceColumns, ...
+        string(sensorMap.SensorID), string(sensorMap.SensorType), ...
+        sensorMap.SensorChannel, repmat(streamLabel, height(sensorMap),1), ...
+        channelLabels(sourceColumns), ...
+        'VariableNames', {'SourceStream','SourceColumn','SensorID', ...
+        'SensorType','SensorChannel','StreamLabel','ChannelLabel'});
 end
 
-function sensorId = extractSensorId(stream)
-    sensorId = "";
+function [sensorIds, channelLabels] = extractChannelMetadata(stream, nChannels)
+    % Read the metadata entry belonging to every column of the combined
+    % Delsys stream. Both channels of a DuoSensor must carry the same DEC ID.
+    entries = {};
     try
         channelInfo = stream.info.desc.channels.channel;
         if iscell(channelInfo)
-            entries = channelInfo;
+            entries = channelInfo(:);
         else
-            entries = num2cell(channelInfo);
+            entries = num2cell(channelInfo(:));
         end
-        for ii = 1:numel(entries)
-            entry = entries{ii};
-            if isstruct(entry) && isfield(entry, 'serial_number_dec')
-                value = string(entry.serial_number_dec);
-                value = value(strlength(value) > 0);
-                if ~isempty(value)
-                    sensorId = value(1);
-                    return;
-                end
+    catch ME
+        error('Could not read XDF EMG channel metadata: %s', ME.message);
+    end
+    assert(numel(entries) >= nChannels, ...
+        ['XDF reports %d EMG data columns, but only %d channel metadata ' ...
+         'entries were found.'], nChannels, numel(entries));
+
+    sensorIds = strings(nChannels,1);
+    channelLabels = strings(nChannels,1);
+    for ii = 1:nChannels
+        entry = entries{ii};
+        while iscell(entry) && isscalar(entry)
+            entry = entry{1};
+        end
+
+        sensorIds(ii) = getChannelFieldText(entry, 'serial_number_dec');
+        for labelField = ["label", "name", "type"]
+            value = getChannelFieldText(entry, labelField);
+            if strlength(value) > 0
+                channelLabels(ii) = value;
+                break;
             end
         end
-    catch
-    end
+        if strlength(channelLabels(ii)) == 0
+            channelLabels(ii) = "XDF_Channel_" + ii;
+        end
 
-    % Some XDF versions wrap metadata differently. JSON fallback still reads
-    % serial_number_dec and never uses the unreliable Pair value.
-    try
-        metadataText = jsonencode(stream.info.desc);
-        token = regexp(metadataText, ...
-            '"serial_number_dec"\s*:\s*"?(\d+)"?', ...
-            'tokens', 'once');
-        if ~isempty(token), sensorId = string(token{1}); end
-    catch
+        % Fallback for XDF versions with another cell/struct wrapping.
+        if strlength(sensorIds(ii)) == 0
+            try
+                metadataText = jsonencode(entry);
+                token = regexp(metadataText, ...
+                    '"serial_number_dec"\s*:\s*"?(\d+)"?', ...
+                    'tokens', 'once');
+                if ~isempty(token), sensorIds(ii) = string(token{1}); end
+            catch
+            end
+        end
     end
+end
+
+function value = getChannelFieldText(entry, fieldName)
+    value = "";
+    if ~isstruct(entry) || ~isfield(entry, fieldName), return; end
+    rawValue = entry.(fieldName);
+    while iscell(rawValue) && numel(rawValue) == 1
+        rawValue = rawValue{1};
+    end
+    if isempty(rawValue) || isstruct(rawValue), return; end
+    candidates = strtrim(string(rawValue));
+    candidates = candidates(strlength(candidates) > 0);
+    if ~isempty(candidates), value = candidates(1); end
 end
 
 function data = orientStreamData(rawData, nSamples)
@@ -1062,7 +1296,7 @@ function automaticWindow = getAutomaticWalkingWindow(streams)
     markerIndex = [];
     for ii = 1:numel(streams)
         streamName = getInfoText(streams{ii}.info, 'name');
-        if contains(streamName, 'GRF_Marker', 'IgnoreCase', true)
+        if strcmpi(strtrim(streamName), 'IMU_Markers')
             markerIndex = ii;
             break;
         end
@@ -1071,15 +1305,21 @@ function automaticWindow = getAutomaticWalkingWindow(streams)
 
     markerStream = streams{markerIndex};
     markerLabels = flattenMarkerLabels(markerStream.time_series);
-    startIndex = find(contains(markerLabels, 'START_', 'IgnoreCase', true) & ...
-        ~contains(markerLabels, 'standing', 'IgnoreCase', true), 1);
-    if isempty(startIndex), return; end
     markerTimes = double(markerStream.time_stamps(:));
-    endCandidates = find(contains(markerLabels, 'END_', 'IgnoreCase', true) & ...
-        ~contains(markerLabels, 'standing', 'IgnoreCase', true) & ...
-        markerTimes > markerTimes(startIndex));
-    if isempty(endCandidates), return; end
-    automaticWindow = [markerTimes(startIndex), markerTimes(endCandidates(1))];
+    nMarkers = min(numel(markerLabels), numel(markerTimes));
+    markerLabels = markerLabels(1:nMarkers);
+    markerTimes = markerTimes(1:nMarkers);
+    if nMarkers == 0, return; end
+
+    [startIndex, endIndex] = findNonStandingMarkerPair( ...
+        markerLabels, markerTimes);
+    if isempty(startIndex) || isempty(endIndex), return; end
+
+    automaticWindow = [markerTimes(startIndex), markerTimes(endIndex)];
+    markerStreamName = getInfoText(markerStream.info, 'name');
+    fprintf('Walking markers from %s: %s -> %s.\n', ...
+        char(markerStreamName), char(markerLabels(startIndex)), ...
+        char(markerLabels(endIndex)));
 end
 
 function labels = flattenMarkerLabels(timeSeries)
@@ -1093,6 +1333,94 @@ function labels = flattenMarkerLabels(timeSeries)
         while iscell(value) && ~isempty(value), value = value{1}; end
         textValue = string(value);
         if ~isempty(textValue), labels(ii) = textValue(1); end
+    end
+end
+
+function [startIndex, endIndex] = findNonStandingMarkerPair(labels, times)
+    startIndex = [];
+    endIndex = [];
+
+    %% 1. Standardize marker labels and timestamps
+    labels = strtrim(string(labels(:)));
+    times  = double(times(:));
+
+    nMarkers = min(numel(labels), numel(times));
+    labels = labels(1:nMarkers);
+    times  = times(1:nMarkers);
+
+    if nMarkers == 0
+        return;
+    end
+
+    normalizedLabels = lower(labels);
+
+    %% 2. Remove every marker containing "standing"
+    isStanding = contains(normalizedLabels, "standing");
+
+    %% 3. Support both marker naming formats
+    % Format A:
+    %   Start_boost / End_boost
+    %
+    % Format B:
+    %   NoExoPre_walking_Start / NoExoPre_walking_End
+
+    isStartMarker = ...
+        startsWith(normalizedLabels, "start_") | ...
+        endsWith(normalizedLabels, "_start");
+
+    isEndMarker = ...
+        startsWith(normalizedLabels, "end_") | ...
+        endsWith(normalizedLabels, "_end");
+
+    startCandidates = find(isStartMarker & ~isStanding);
+    endCandidates   = find(isEndMarker   & ~isStanding);
+
+    if isempty(startCandidates) || isempty(endCandidates)
+        return;
+    end
+
+    %% 4. Extract the common part of each marker name
+    % Start_boost                -> boost
+    % End_boost                  -> boost
+    % NoExoPre_walking_Start     -> noexopre_walking
+    % NoExoPre_walking_End       -> noexopre_walking
+
+    startKeys = regexprep( ...
+        normalizedLabels(startCandidates), ...
+        '^start_|_start$', '');
+
+    endKeys = regexprep( ...
+        normalizedLabels(endCandidates), ...
+        '^end_|_end$', '');
+
+    %% 5. Search from the latest Start marker backwards
+    % This ensures that the last complete pair is selected.
+    [~, startOrder] = sort(times(startCandidates), 'descend');
+
+    startCandidates = startCandidates(startOrder);
+    startKeys       = startKeys(startOrder);
+
+    for ii = 1:numel(startCandidates)
+        candidateStart = startCandidates(ii);
+        startKey = startKeys(ii);
+
+        % The End marker must:
+        % 1. Have the same name/key
+        % 2. Occur after the Start marker
+        matchingEnds = endCandidates( ...
+            endKeys == startKey & ...
+            times(endCandidates) > times(candidateStart));
+
+        if isempty(matchingEnds)
+            continue;
+        end
+
+        % Select the first matching End after this Start
+        [~, firstEnd] = min(times(matchingEnds));
+
+        startIndex = candidateStart;
+        endIndex   = matchingEnds(firstEnd);
+        return;
     end
 end
 
