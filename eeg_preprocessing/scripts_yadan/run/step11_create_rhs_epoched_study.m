@@ -1,1722 +1,407 @@
+function step11_create_rhs_epoched_study()
 % GOAL
 %   Build the run-separated RHS EEGLAB STUDY used by ROI clustering and
 %   time-warped ERSP analysis.
+%
 % INPUT
 %   9_RHS-ERSP-run-separated/01_RHS_epoch_manifest.csv
 %   Run-separated RHS epoched datasets from Step 10.
+%   Current manual IC review workbook from Step 09.
+%
 % APPROACH
-%   1. Read all completed datasets from the Step 10 manifest.
-%   2. Verify dataset identity, shared ICA metadata, selected ICs, DIPFIT,
-%      condition/run metadata, and timewarp matrices.
-%   3. Build one EEGLAB STUDY while preserving one shared ICA identity per
-%      subject and the physical run number for each dataset.
-%   4. Verify STUDY.datasetinfo.comps against the manifest.
+%   1. Read completed datasets and current manually accepted ICs.
+%   2. Check ICA identity, selected dipoles, run metadata and timewarp once.
+%   3. Reuse the current STUDY when its inputs and dataset entries match.
+%   4. Otherwise build, verify and save the STUDY once.
+%
 % OUTPUT
 %   9_RHS-ERSP-run-separated/02_RHS-epoched-STUDY/*
+%
 % USED BY
-%   step12_run_rhs_roi_repeated_clustering.m
+%   step12_rhs_roi_repeated_clustering.m
 
-clear;
 clc;
-
 
 % SETTINGS AND PATHS
 
-runFolder = fileparts(mfilename('fullpath'));
-scriptsRoot = fileparts(runFolder);
-
+scriptsRoot = fileparts(fileparts(mfilename('fullpath')));
 addpath(scriptsRoot, '-begin');
 addpath(fullfile(scriptsRoot, 'config'), '-begin');
-
 P = project_paths();
 cfg = config_step11_rhs_epoched_study();
 
-processingVersion = cfg.processingVersion;
+rhsRoot = fullfile(P.outputFolder, cfg.rhsRootFolderName);
+epochedSetRoot = fullfile(rhsRoot, cfg.epochedSetFolderName);
+manifestFile = fullfile(rhsRoot, cfg.manifestFileName);
+studyFolder = fullfile(rhsRoot, cfg.studyFolderName);
+studyPath = fullfile(studyFolder, cfg.studyFilename);
+assert(isfile(manifestFile), 'Manifest was not found: %s', manifestFile);
 
-studyName = cfg.studyName;
-studyFilename = cfg.studyFilename;
-groupLabel = cfg.groupLabel;
+% READ STEP 10 MANIFEST
 
-sharedICASession = cfg.sharedICASession;
-forceRebuild = cfg.forceRebuild;
+manifest = readtable(manifestFile, 'FileType', 'text', 'Delimiter', ',', ...
+    'TextType', 'string', 'VariableNamingRule', 'preserve');
+required = {'SubjectOrder', 'ConditionOrder', 'Subject', 'DatasetLabel', ...
+    'ConditionCode', 'RunNumber', 'OutputSet', 'TimewarpAccepted', 'Status'};
+missingFields = setdiff(required, manifest.Properties.VariableNames);
+assert(isempty(missingFields), 'Manifest is missing: %s', ...
+    strjoin(missingFields, ', '));
 
-conditionOrder = cfg.conditionOrder;
-
-outputFolder = P.outputFolder;
-eeglabFolder = P.eeglabFolder;
-
-% START EEGLAB
-
-if exist('eeglab', 'file') ~= 2
-
-    error( ...
-        'EEGLAB was not found after running project_paths.m.');
-
+for field = {'Subject', 'DatasetLabel', 'ConditionCode', 'OutputSet', 'Status'}
+    manifest.(field{1}) = string(manifest.(field{1}));
 end
+keep = startsWith(manifest.Status, "completed") | ...
+    startsWith(manifest.Status, "reused");
+manifest = manifest(keep, :);
+assert(~isempty(manifest), 'No successful Step 10 datasets were found.');
 
-
-[ALLEEG, EEG, CURRENTSET, ALLCOM] = ...
-    eeglab('nogui'); %#ok<ASGLU>
-
-
-% Keep large STUDY datasets on disk as much as possible.
-pop_editoptions( ...
-    'option_storedisk', 1);
-
-
-% INPUT / OUTPUT PATHS
-
-rhsRoot = fullfile( ...
-    outputFolder, ...
-    cfg.rhsRootFolderName);
-
-
-epochedSetRoot = fullfile( ...
-    rhsRoot, ...
-    cfg.epochedSetFolderName);
-
-
-manifestFile = fullfile( ...
-    rhsRoot, ...
-    cfg.manifestFileName);
-
-
-studyFolder = fullfile( ...
-    rhsRoot, ...
-    cfg.studyFolderName);
-
-
-studyPath = fullfile( ...
-    studyFolder, ...
-    studyFilename);
-
-
-if exist(manifestFile, 'file') ~= 2
-
-    error( ...
-        'Manifest was not found:\n%s', ...
-        manifestFile);
-
+for field = {'SubjectOrder', 'ConditionOrder', 'RunNumber', 'TimewarpAccepted'}
+    manifest.(field{1}) = numeric_column_local(manifest.(field{1}));
 end
-
-
-if exist(epochedSetRoot, 'dir') ~= 7
-
-    error( ...
-        'Epoched dataset folder was not found:\n%s', ...
-        epochedSetRoot);
-
-end
-
-
-if exist(studyFolder, 'dir') ~= 7
-
-    mkdir(studyFolder);
-
-end
-
-
-% EXISTING STUDY PROTECTION
-
-if exist(studyPath, 'file') == 2
-
-    if ~forceRebuild
-
-        error([ ...
-            'The STUDY already exists:\n%s\n\n' ...
-            'If you intentionally want to rebuild it, set:\n' ...
-            '    forceRebuild = true;'], ...
-            studyPath);
-
-    end
-
-
-    fprintf('Replacing existing STUDY: %s\n', studyPath);
-
-    delete(studyPath);
-
-end
-
-
-% READ RHS EPOCH MANIFEST
-% IMPORTANT:
-% Explicit CSV parsing + BOM cleaning.
-% Build a stable subject-order index from the current manifest.
-
-
-% Force comma-separated parsing.
-
-opts = detectImportOptions( ...
-    manifestFile, ...
-    'Delimiter', ',');
-
-
-opts.VariableNamingRule = ...
-    'preserve';
-
-
-% Read text columns consistently.
-manifest = readtable( ...
-    manifestFile, ...
-    opts);
-
-
-% Clean header names
-
-variableNames = ...
-    string(manifest.Properties.VariableNames);
-
-variableNames = ...
-    strtrim(variableNames);
-
-
-% UTF-8 BOM
-for k = 1:numel(variableNames)
-
-    thisName = char(variableNames(k));
-
-    % Normal Unicode BOM
-    thisName(thisName == char(65279)) = [];
-
-    % Possible decoded UTF-8 BOM
-    thisName = strrep( ...
-        thisName, ...
-        'ï»¿', ...
-        '');
-
-    variableNames(k) = ...
-        string(strtrim(thisName));
-
-end
-
-
-manifest.Properties.VariableNames = ...
-    cellstr(variableNames);
-
-
-if width(manifest) <= 1
-
-    error([ ...
-        'The CSV was not parsed correctly.\n' ...
-        'Only %d column was detected.\n' ...
-        'Expected comma-separated columns.\n\n' ...
-        'Manifest:\n%s'], ...
-        width(manifest), ...
-        manifestFile);
-
-end
-
-
-% REQUIRED CORE FIELDS
-% SubjectOrder and ConditionOrder are NOT mandatory here because
-% they can be reconstructed if necessary.
-
-requiredCoreFields = { ...
-    'Subject', ...
-    'DatasetLabel', ...
-    'ConditionCode', ...
-    'RunNumber', ...
-    'OutputSet', ...
-    'TimewarpAccepted', ...
-    'YesICCount', ...
-    'YesICs', ...
-    'Status'};
-
-
-missingFields = strings(0, 1);
-
-
-for k = 1:numel(requiredCoreFields)
-
-    if ~ismember( ...
-            requiredCoreFields{k}, ...
-            manifest.Properties.VariableNames)
-
-        missingFields(end + 1, 1) = ...
-            string(requiredCoreFields{k}); %#ok<AGROW>
-
-    end
-
-end
-
-
-if ~isempty(missingFields)
-
-    error([ ...
-        'Manifest is missing required core field(s):\n' ...
-        '  %s\n\n' ...
-        'Actual columns MATLAB read:\n' ...
-        '  %s\n\n' ...
-        'Manifest:\n%s'], ...
-        char(strjoin(missingFields, ', ')), ...
-        char(strjoin( ...
-            string(manifest.Properties.VariableNames), ...
-            ', ')), ...
-        manifestFile);
-
-end
-
-
-% NORMALIZE TEXT COLUMNS
-
-manifest.Subject = ...
-    string(manifest.Subject);
-
-manifest.DatasetLabel = ...
-    string(manifest.DatasetLabel);
-
-manifest.ConditionCode = ...
-    string(manifest.ConditionCode);
-
-manifest.OutputSet = ...
-    string(manifest.OutputSet);
-
-manifest.YesICs = ...
-    string(manifest.YesICs);
-
-manifest.Status = ...
-    string(manifest.Status);
-
-
-if ismember( ...
-        'ProcessingVersion', ...
-        manifest.Properties.VariableNames)
-
-    manifest.ProcessingVersion = ...
-        string(manifest.ProcessingVersion);
-
-end
-
-
-% RECONSTRUCT SubjectOrder IF NECESSARY
-
-if ~ismember( ...
-        'SubjectOrder', ...
-        manifest.Properties.VariableNames)
-
-    warning([ ...
-        'SubjectOrder was not available after CSV parsing. ' ...
-        'Reconstructing it dynamically from the manifest.']);
-
-    subjectListForOrder = unique( ...
-        manifest.Subject, ...
-        'stable');
-
-    SubjectOrder = nan(height(manifest), 1);
-
-    for s = 1:numel(subjectListForOrder)
-        SubjectOrder(manifest.Subject == subjectListForOrder(s)) = s;
-    end
-
-    if any(~isfinite(SubjectOrder))
-        error('Could not reconstruct SubjectOrder from the manifest.');
-    end
-
-    manifest = addvars( ...
-        manifest, ...
-        SubjectOrder, ...
-        'Before', 1, ...
-        'NewVariableNames', ...
-        'SubjectOrder');
-
-end
-
-
-% RECONSTRUCT ConditionOrder IF NECESSARY
-
-if ~ismember( ...
-        'ConditionOrder', ...
-        manifest.Properties.VariableNames)
-
-    warning([ ...
-        'ConditionOrder was not available after CSV parsing. ' ...
-        'Reconstructing it from conditionOrder.']);
-
-
-    ConditionOrder = ...
-        nan(height(manifest), 1);
-
-
-    for c = 1:numel(conditionOrder)
-
-        mask = ...
-            manifest.ConditionCode == ...
-            conditionOrder(c);
-
-        ConditionOrder(mask) = c;
-
-    end
-
-
-    if any(~isfinite(ConditionOrder))
-
-        badConditions = unique( ...
-            manifest.ConditionCode( ...
-                ~isfinite(ConditionOrder)));
-
-        error( ...
-            'Unknown condition(s): %s', ...
-            char(strjoin( ...
-                badConditions, ...
-                ', ')));
-
-    end
-
-
-    manifest = addvars( ...
-        manifest, ...
-        ConditionOrder, ...
-        'After', ...
-        'SubjectOrder', ...
-        'NewVariableNames', ...
-        'ConditionOrder');
-
-end
-
-
-
-
-% KEEP ONLY SUCCESSFUL FINAL OUTPUTS
-
-statusText = ...
-    string(manifest.Status);
-
-
-keepMask = ...
-    startsWith(statusText, "completed") | ...
-    startsWith(statusText, "reused");
-
-
-manifest = ...
-    manifest(keepMask, :);
-
-
-manifest = sortrows( ...
-    manifest, ...
-    {'SubjectOrder', ...
-     'ConditionOrder', ...
-     'RunNumber'});
-
-
-fprintf('Successful run-separated datasets: %d\n', height(manifest));
-
-
-if isempty(manifest)
-
-    error([ ...
-        'The RHS epoch manifest contains no successful datasets. ' ...
-        'Run Step 11 successfully before creating the STUDY.']);
-
-end
-
-
-% DERIVE SUBJECT / YES-IC STRUCTURE FROM CURRENT MANIFEST
-
-subjectSpecs = subject_specs_from_rhs_manifest_local(manifest);
-
-for s = 1:numel(subjectSpecs)
-
-    spec = subjectSpecs(s);
-    rows = manifest.Subject == spec.subject;
-
-    observedConditionRuns = ...
-        manifest.ConditionCode(rows) + "|" + ...
-        string(manifest.RunNumber(rows));
-
-    if numel(unique(observedConditionRuns)) ~= numel(observedConditionRuns)
-        error([ ...
-            'Duplicate condition/run datasets were found for %s. ' ...
-            'Each physical condition/run may appear only once.'], ...
-            char(spec.subject));
-    end
-
-    observedConditions = unique(manifest.ConditionCode(rows), 'stable');
-    protocolMissing = setdiff(conditionOrder, observedConditions, 'stable');
-
-    if ~isempty(protocolMissing)
-        fprintf('  protocol conditions not present in current data: %s\n', ...
-            char(strjoin(protocolMissing, ', ')));
-    end
-
-end
-
+manifest = sortrows(manifest, {'SubjectOrder', 'ConditionOrder', 'RunNumber'});
+
+% READ CURRENT MANUAL SELECTIONS
+
+reviewConfig = config_step05_09_eeg_preprocessing_ica(P);
+[manifest, subjectSpecs] = current_manual_selection_local(manifest, ...
+    fullfile(P.outputFolder, reviewConfig.manualICReview.workbookName), ...
+    reviewConfig.manualICReview.sheetName);
+assert(all(isfinite(manifest.SubjectOrder)) && ...
+    all(isfinite(manifest.ConditionOrder)), 'Invalid subject/condition order.');
+assert(all(isfinite(manifest.RunNumber) & manifest.RunNumber >= 1 & ...
+    manifest.RunNumber == round(manifest.RunNumber)), 'Invalid run number.');
+assert(all(isfinite(manifest.TimewarpAccepted) & manifest.TimewarpAccepted >= 1 & ...
+    manifest.TimewarpAccepted == round(manifest.TimewarpAccepted)), ...
+    'Invalid TimewarpAccepted count.');
+[~, subjectIndex] = ismember(manifest.Subject, string({subjectSpecs.subject}));
+nDatasets = height(manifest);
+
+datasetKeys = manifest.Subject + "|" + manifest.ConditionCode + "|" + ...
+    string(manifest.RunNumber);
+assert(numel(unique(datasetKeys)) == nDatasets, ...
+    'Duplicate subject/condition/run datasets were found.');
 
 % RESOLVE INPUT .SET PATHS
 
-nDatasets = ...
-    height(manifest);
+setPaths = strings(nDatasets, 1);
+for i = 1:nDatasets
+    setPaths(i) = resolve_set_path_local(manifest.OutputSet(i), ...
+        manifest.DatasetLabel(i), epochedSetRoot);
+end
+assert(numel(unique(lower(setPaths))) == nDatasets, ...
+    'Duplicate .set paths were found.');
 
+% START EEGLAB
 
-setPaths = ...
-    strings(nDatasets, 1);
+assert(exist('eeglab', 'file') == 2, 'EEGLAB was not found.');
+eeglab('nogui');
+restoreRMS = suspend_ica_rms_local(); %#ok<NASGU>
+pop_editoptions('option_storedisk', 1);
 
+% CHECK EACH EPOCHED DATASET
+
+% ICA signatures already cover weights, sphere and ICA channel order.
+% Read each continuous source header only once during this Step 11 run.
+sourceICACache = containers.Map('KeyType', 'char', 'ValueType', 'char');
+referenceDipoles = cell(numel(subjectSpecs), 1);
+manifest.SourceDatasetSignature = strings(nDatasets, 1);
 
 for i = 1:nDatasets
+    s = subjectIndex(i);
+    spec = subjectSpecs(s);
+    EEG = pop_loadset('filename', char(setPaths(i)), 'loadmode', 'info');
+    dipoles = validate_epoched_dataset_local(EEG, manifest(i, :), ...
+        spec, sourceICACache);
 
-    setPaths(i) = ...
-        resolve_set_path_local( ...
-            manifest.OutputSet(i), ...
-            manifest.DatasetLabel(i), ...
-            epochedSetRoot);
-
-
-    if exist(char(setPaths(i)), 'file') ~= 2
-
-        error( ...
-            'Dataset not found:\n%s', ...
-            char(setPaths(i)));
-
+    if isempty(referenceDipoles{s})
+        referenceDipoles{s} = dipoles;
+    else
+        assert(isequaln(referenceDipoles{s}, dipoles), ...
+            'Selected DIPFIT coordinates differ across runs for %s: %s', ...
+            char(spec.subject), char(setPaths(i)));
     end
+    manifest.SourceDatasetSignature(i) = ...
+        hipexo.eeglab_dataset_signature(setPaths(i));
+end
+clear EEG sourceICACache referenceDipoles;
 
+% REUSE OR REBUILD EXISTING STUDY
+
+% Preserve the previous signature format so this cleanup alone does not
+% invalidate a matching STUDY. Paths remain relevant because STUDY stores them.
+fields = {'Subject', 'DatasetLabel', 'ConditionCode', 'RunNumber', 'YesICs', ...
+    'SourceDatasetSignature', 'ReviewICAIdentity'};
+inputSignature = hipexo.content_signature(struct( ...
+    'datasets', table2struct(manifest(:, fields)), 'paths', string(setPaths), ...
+    'shared_ica_session', cfg.sharedICASession, 'group', cfg.groupLabel));
+
+if ~cfg.forceRebuild && isfile(studyPath) && existing_study_is_current_local( ...
+        studyPath, inputSignature, manifest, subjectSpecs, subjectIndex, cfg, setPaths)
+    fprintf('No STUDY rebuild was required.\n');
+    return;
 end
 
+% BUILD STUDY COMMANDS
+% session = shared ICA identity; run = physical experimental run.
 
-if numel(unique(lower(setPaths))) ~= ...
-        nDatasets
-
-    error( ...
-        'Duplicate .set paths were found.');
-
-end
-
-
-% PREFLIGHT CHECK EACH EPOCHED DATASET
-
-fprintf('Preflight checking %d epoched datasets.\n', nDatasets);
-
-
-EEGinfo = ...
-    cell(nDatasets, 1);
-
-
-sourceBytes = ...
-    zeros(nDatasets, 1);
-
-sourceDateNum = ...
-    zeros(nDatasets, 1);
-
-
+commands = cell(1, nDatasets);
 for i = 1:nDatasets
-
-    subject = ...
-        string(manifest.Subject(i));
-
-    condition = ...
-        string(manifest.ConditionCode(i));
-
-    physicalRun = ...
-        double(manifest.RunNumber(i));
-
-
-    specIndex = ...
-        find_subject_spec_local( ...
-            subjectSpecs, ...
-            subject);
-
-
-    spec = ...
-        subjectSpecs(specIndex);
-
-    fprintf('  %d/%d: %s | %s | run %d\n', ...
-        i, nDatasets, char(subject), char(condition), physicalRun);
-
-
-    EEGtmp = pop_loadset( ...
-        'filename', ...
-        char(setPaths(i)), ...
-        'loadmode', ...
-        'info');
-
-
-    validate_epoched_dataset_local( ...
-        EEGtmp, ...
-        subject, ...
-        condition, ...
-        physicalRun, ...
-        spec.yesICs);
-
-
-    EEGinfo{i} = ...
-        EEGtmp;
-
-
-    fileInfo = ...
-        dir(char(setPaths(i)));
-
-
-    sourceBytes(i) = ...
-        fileInfo.bytes;
-
-    sourceDateNum(i) = ...
-        fileInfo.datenum;
-
+    commands{i} = {'index', i, 'load', char(setPaths(i)), ...
+        'subject', char(manifest.Subject(i)), ...
+        'condition', char(manifest.ConditionCode(i)), ...
+        'session', cfg.sharedICASession, 'run', manifest.RunNumber(i), ...
+        'group', cfg.groupLabel, 'comps', subjectSpecs(subjectIndex(i)).yesICs};
 end
 
-
-% VERIFY SHARED SUBJECT-LEVEL ICA
-% All run-separated datasets belonging to one subject MUST have
-% identical ICA weights/sphere/channel indices.
-
-
-for s = 1:numel(subjectSpecs)
-
-    spec = ...
-        subjectSpecs(s);
-
-
-    rows = find( ...
-        manifest.Subject == spec.subject);
-
-
-    referenceIndex = ...
-        rows(1);
-
-
-    EEGref = ...
-        EEGinfo{referenceIndex};
-
-
-
-    for j = 2:numel(rows)
-
-        currentIndex = ...
-            rows(j);
-
-
-        assert_same_ica_local( ...
-            EEGref, ...
-            EEGinfo{currentIndex}, ...
-            spec.yesICs, ...
-            spec.subject, ...
-            setPaths(referenceIndex), ...
-            setPaths(currentIndex));
-
-    end
-
-
-    fprintf('  Shared ICA verified: %s (%d datasets).\n', ...
-        char(spec.subject), numel(rows));
-
-end
-
-
-% BUILD std_editset COMMANDS
-% session = shared ICA identity
-% run     = physical experiment run
-% comps   = fixed final Yes ICs
-
-
-commands = ...
-    cell(1, nDatasets);
-
-
-for i = 1:nDatasets
-
-    subject = ...
-        string(manifest.Subject(i));
-
-    condition = ...
-        string(manifest.ConditionCode(i));
-
-    physicalRun = ...
-        double(manifest.RunNumber(i));
-
-
-    specIndex = ...
-        find_subject_spec_local( ...
-            subjectSpecs, ...
-            subject);
-
-
-    yesICs = ...
-        subjectSpecs(specIndex).yesICs;
-
-
-    commands{i} = { ...
-        'index', i, ...
-        'load', char(setPaths(i)), ...
-        'subject', char(subject), ...
-        'condition', char(condition), ...
-        'session', sharedICASession, ...
-        'run', physicalRun, ...
-        'group', groupLabel, ...
-        'comps', yesICs};
-
-end
-
-
-STUDY = [];
-ALLEEG = [];
-
-
-studyNotes = [ ...
-    'RHS gait-cycle run-separated epoched STUDY. ' ...
-    'All run-separated datasets belonging to the same participant ' ...
-    'inherit one subject-level AMICA decomposition. ' ...
-    'Session denotes ICA decomposition identity. ' ...
-    'Run denotes physical experimental run. ' ...
-    'Only final manually accepted Yes ICs are selected for clustering. ' ...
-    'No ERSP has been precomputed at this stage.'];
-
-
-[STUDY, ALLEEG] = std_editset( ...
-    STUDY, ...
-    ALLEEG, ...
-    'name', studyName, ...
-    'task', ...
-        'Hip-exoskeleton walking RHS gait-cycle analysis', ...
-    'filename', studyFilename, ...
-    'filepath', studyFolder, ...
-    'notes', studyNotes, ...
-    'commands', commands, ...
-    'updatedat', 'off', ...
-    'savedat', 'off');
-
-
-% MAKE ALLEEG METADATA CONSISTENT IN MEMORY
-% No source .set is saved here.
-
-for i = 1:nDatasets
-
-    subject = ...
-        string(manifest.Subject(i));
-
-    condition = ...
-        string(manifest.ConditionCode(i));
-
-    physicalRun = ...
-        double(manifest.RunNumber(i));
-
-
-    ALLEEG(i).subject = ...
-        char(subject);
-
-    ALLEEG(i).condition = ...
-        char(condition);
-
-    ALLEEG(i).session = ...
-        sharedICASession;
-
-    ALLEEG(i).run = ...
-        physicalRun;
-
-    ALLEEG(i).group = ...
-        groupLabel;
-
-end
-
-
-% STUDY CONSISTENCY CHECK
-
-[STUDY, ALLEEG] = ...
-    std_checkset( ...
-        STUDY, ...
-        ALLEEG);
-
+% std_editset calls std_checkset internally. Supplying a filename here
+% would also save early; save once below after our final verification.
+[STUDY, ALLEEG] = std_editset([], [], 'name', cfg.studyName, ...
+    'task', 'Hip-exoskeleton walking RHS gait-cycle analysis', ...
+    'notes', ['Run-separated RHS epochs; one shared ICA session per subject; ' ...
+        'physical run numbers; current manual Yes ICs; no ERSP precomputation.'], ...
+    'commands', commands, 'updatedat', 'off', 'savedat', 'off');
 
 % VERIFY FINAL STUDY STRUCTURE
 
-verify_study_local( ...
-    STUDY, ...
-    manifest, ...
-    subjectSpecs, ...
-    sharedICASession, ...
-    groupLabel);
-
+verify_study_local(STUDY, manifest, subjectSpecs, subjectIndex, cfg, setPaths);
 
 % REPRODUCIBILITY METADATA
 
-if ~isfield(STUDY, 'etc') || ...
-        isempty(STUDY.etc)
-
-    STUDY.etc = struct();
-
-end
-
-
-buildInfo = struct();
-
-
-buildInfo.version = ...
-    char(processingVersion);
-
-
-buildInfo.created_on = ...
-    char(datetime( ...
-        'now', ...
-        'Format', ...
-        'yyyy-MM-dd HH:mm:ss'));
-
-
-buildInfo.source_manifest = ...
-    manifestFile;
-
-
-buildInfo.total_datasets = ...
-    nDatasets;
-
-
-buildInfo.shared_ica_session = ...
-    sharedICASession;
-
-
+buildInfo.version = char(cfg.processingVersion);
+buildInfo.created_on = char(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
+buildInfo.source_manifest = manifestFile;
+buildInfo.input_signature = char(inputSignature);
+buildInfo.total_datasets = nDatasets;
+buildInfo.shared_ica_session = cfg.sharedICASession;
 buildInfo.session_definition = ...
-    ['session = shared subject-level ICA decomposition identity; ' ...
-     'not physical experimental run'];
-
-
-buildInfo.physical_run_field = ...
-    'STUDY.datasetinfo.run';
-
-
-buildInfo.subjects = ...
-    cellstr(string({subjectSpecs.subject}));
-
-
-buildInfo.yes_ic_lists = ...
-    arrayfun( ...
-        @(spec) double(spec.yesICs(:)'), ...
-        subjectSpecs, ...
-        'UniformOutput', false);
-
-
-buildInfo.source_set_files_modified = ...
-    false;
-
-
-buildInfo.signal_timewarped = ...
-    false;
-
-
-buildInfo.ersp_precomputed = ...
-    false;
-
-
-buildInfo.next_step = ...
-    'six_fixed_ROI_repeated_clustering';
-
-
-STUDY.etc.rhs_epoched_study = ...
-    buildInfo;
-
+    'session = shared subject-level ICA decomposition identity; not physical experimental run';
+buildInfo.physical_run_field = 'STUDY.datasetinfo.run';
+buildInfo.subjects = cellstr(string({subjectSpecs.subject}));
+buildInfo.yes_ic_lists = reshape({subjectSpecs.yesICs}, [], 1);
+buildInfo.source_set_files_modified = false;
+buildInfo.signal_timewarped = false;
+buildInfo.ersp_precomputed = false;
+buildInfo.next_step = 'six_fixed_ROI_repeated_clustering';
+if ~isfield(STUDY, 'etc') || isempty(STUDY.etc), STUDY.etc = struct(); end
+STUDY.etc.rhs_epoched_study = buildInfo;
 
 % SAVE STUDY
 
+if ~isfolder(studyFolder), mkdir(studyFolder); end
+pop_savestudy(STUDY, ALLEEG, ...
+    'filename', cfg.studyFilename, 'filepath', studyFolder);
+assert(isfile(studyPath), 'STUDY file was not created: %s', studyPath);
+fprintf('STUDY saved: %s (%d datasets, %d subjects).\n', ...
+    studyPath, nDatasets, numel(subjectSpecs));
 
-STUDY = pop_savestudy( ...
-    STUDY, ...
-    ALLEEG, ...
-    'filename', ...
-    studyFilename, ...
-    'filepath', ...
-    studyFolder);
-
-
-if exist(studyPath, 'file') ~= 2
-
-    error( ...
-        'STUDY file was not created:\n%s', ...
-        studyPath);
-
+%% END OF STEP
 end
 
+% STEP-LOCAL FUNCTIONS
 
-% VERIFY SOURCE .SET FILES WERE NOT MODIFIED
-
-for i = 1:nDatasets
-
-    afterInfo = ...
-        dir(char(setPaths(i)));
-
-
-    if afterInfo.bytes ~= sourceBytes(i) || ...
-            afterInfo.datenum ~= sourceDateNum(i)
-
-        error([ ...
-            'A source .set file unexpectedly changed:\n%s'], ...
-            char(setPaths(i)));
-
+function values = numeric_column_local(values)
+    if isnumeric(values) || islogical(values)
+        values = double(values(:));
+    else
+        values = str2double(string(values(:)));
     end
-
 end
 
+function [M, specs] = current_manual_selection_local(M, workbook, sheet)
+% Read each subject's Yes ICs once; keep numeric indices for all later use.
+    R = readtable(workbook, 'Sheet', sheet, 'TextType', 'string', ...
+        'VariableNamingRule', 'preserve');
+    required = {'Subject', 'Session', 'Dataset/File', 'IC', ...
+        'ManualFinalDecision', 'ICAIdentity'};
+    assert(all(ismember(required, R.Properties.VariableNames)), ...
+        'Manual IC review lacks current ICA identity columns. Run Step09.');
+    decision = upper(strtrim(string(R.ManualFinalDecision)));
+    decision(ismissing(decision)) = "";
+    assert(all(ismember(decision, ["", "YES", "NO", "REVIEW"])), ...
+        'Unsupported manual IC decision.');
+    R = R(decision == "YES", :);
 
-% RELOAD SAVED STUDY AND VERIFY
-
-
-[STUDYcheck, ALLEEGcheck] = ...
-    pop_loadstudy( ...
-        'filename', ...
-        studyFilename, ...
-        'filepath', ...
-        studyFolder); %#ok<ASGLU>
-
-
-verify_study_local( ...
-    STUDYcheck, ...
-    manifest, ...
-    subjectSpecs, ...
-    sharedICASession, ...
-    groupLabel);
-
-
-% FINAL REPORT
-
-fprintf('RHS epoched STUDY created: %s | datasets=%d | subjects=%d\n', ...
-    studyPath, ...
-    numel(STUDYcheck.datasetinfo), ...
-    numel(unique(string({STUDYcheck.datasetinfo.subject}))));
-
-
-% LOCAL FUNCTIONS
-
-
-function subjectSpecs = subject_specs_from_rhs_manifest_local(manifest)
-
-    requiredColumns = { ...
-        'Subject', ...
-        'DatasetLabel', ...
-        'ConditionCode', ...
-        'RunNumber', ...
-        'YesICCount', ...
-        'YesICs'};
-
-    for c = 1:numel(requiredColumns)
-        if ~ismember(requiredColumns{c}, manifest.Properties.VariableNames)
-            error('RHS manifest is missing required column: %s', ...
-                requiredColumns{c});
-        end
-    end
-
-    subjects = unique(string(manifest.Subject), 'stable');
-    subjects = subjects(strlength(strtrim(subjects)) > 0);
-
-    if isempty(subjects)
-        error('RHS manifest contains no valid Subject values.');
-    end
-
-    subjectSpecs = repmat(struct( ...
-        'subject', "", ...
-        'datasetLabel', "", ...
-        'yesICs', []), ...
-        numel(subjects), 1);
+    subjects = unique(M.Subject, 'stable');
+    specs = repmat(struct('subject', "", 'yesICs', [], ...
+        'reviewIdentity', "", 'reviewDatasetFile', ""), numel(subjects), 1);
+    M.YesICs = strings(height(M), 1);
+    M.ReviewICAIdentity = strings(height(M), 1);
+    keepRows = false(height(M), 1);
+    keepSubjects = false(numel(subjects), 1);
 
     for s = 1:numel(subjects)
+        rows = M.Subject == subjects(s);
+        selected = R(string(R.Subject) == subjects(s), :);
+        if isempty(selected), continue; end
 
-        subject = subjects(s);
-        rows = find(string(manifest.Subject) == subject);
+        labels = unique(strtrim(M.DatasetLabel(rows)));
+        assert(~ismissing(subjects(s)) && strlength(strtrim(subjects(s))) > 0 && ...
+            numel(labels) == 1 && ~ismissing(labels) && strlength(labels) > 0, ...
+            'Each subject must have one valid shared-ICA DatasetLabel.');
+        dataset = unique(string(selected.("Dataset/File")));
+        session = unique(string(selected.Session));
+        identity = unique(string(selected.ICAIdentity));
+        assert(numel(dataset) == 1 && numel(session) == 1 && numel(identity) == 1 && ...
+            ~ismissing(identity) && strlength(identity) > 0, ...
+            'Subject %s has ambiguous or unidentified manual selections.', char(subjects(s)));
+        ics = sort(numeric_column_local(selected.IC))';
+        assert(all(isfinite(ics) & ics >= 1 & ics == round(ics)) && ...
+            numel(unique(ics)) == numel(ics), ...
+            'Invalid or duplicate manually selected ICs for %s.', char(subjects(s)));
 
-        datasetLabels = unique( ...
-            strtrim(string(manifest.DatasetLabel(rows))), ...
-            'stable');
-        datasetLabels = datasetLabels(strlength(datasetLabels) > 0);
-
-        if numel(datasetLabels) ~= 1
-            error([ ...
-                '%s must map to exactly one shared-ICA DatasetLabel in ' ...
-                'the RHS manifest; found %d.'], ...
-                char(subject), numel(datasetLabels));
-        end
-
-        referenceYes = [];
-
-        for r = rows(:)'
-
-            yesICs = parse_ic_list_local(manifest.YesICs(r));
-            reportedCount = scalar_numeric_local(manifest.YesICCount(r));
-
-            if ~isfinite(reportedCount) || reportedCount < 1 || ...
-                    reportedCount ~= round(reportedCount)
-                error('%s has an invalid YesICCount in manifest row %d.', ...
-                    char(subject), r);
-            end
-
-            if numel(yesICs) ~= reportedCount
-                error([ ...
-                    '%s manifest row %d reports YesICCount=%d but ' ...
-                    'contains %d Yes IC indices.'], ...
-                    char(subject), r, reportedCount, numel(yesICs));
-            end
-
-            if isempty(referenceYes)
-                referenceYes = yesICs(:)';
-            elseif ~isequal(sort(referenceYes), sort(yesICs(:)'))
-                error([ ...
-                    'Yes-IC lists differ across run-separated datasets ' ...
-                    'for %s. Shared-ICA analysis requires one identical ' ...
-                    'current list per subject.'], ...
-                    char(subject));
-            end
-
-            runNumber = scalar_numeric_local(manifest.RunNumber(r));
-            if ~isfinite(runNumber) || runNumber < 1 || ...
-                    runNumber ~= round(runNumber)
-                error('%s has invalid run number in manifest row %d.', ...
-                    char(subject), r);
-            end
-        end
-
-        subjectSpecs(s).subject = subject;
-        subjectSpecs(s).datasetLabel = datasetLabels(1);
-        subjectSpecs(s).yesICs = referenceYes;
+        specs(s).subject = subjects(s);
+        specs(s).yesICs = ics;
+        specs(s).reviewIdentity = identity;
+        specs(s).reviewDatasetFile = dataset;
+        % These two manifest fields retain the existing reuse signature.
+        M.YesICs(rows) = strjoin(string(ics), ' ');
+        M.ReviewICAIdentity(rows) = identity;
+        keepRows(rows) = true;
+        keepSubjects(s) = true;
     end
+    M = M(keepRows, :);
+    specs = specs(keepSubjects);
+    assert(~isempty(M), 'No subject has a current manual Yes selection for clustering.');
 end
 
-
-function icList = parse_ic_list_local(value)
-
-    textValue = strtrim(string(value));
-
-    if ismissing(textValue) || strlength(textValue) == 0
-        icList = zeros(1, 0);
+function setPath = resolve_set_path_local(manifestPath, datasetLabel, epochedSetRoot)
+    if ~ismissing(manifestPath) && strlength(manifestPath) > 0 && isfile(manifestPath)
+        setPath = manifestPath;
         return;
     end
+    assert(~ismissing(manifestPath) && strlength(manifestPath) > 0, ...
+        'OutputSet is empty for %s.', char(datasetLabel));
+    % Retain the fallback for a project moved to another folder.
+    [~, stem, ext] = fileparts(char(manifestPath));
+    if isempty(ext), ext = '.set'; end
+    setPath = string(fullfile(epochedSetRoot, char(datasetLabel), [stem ext]));
+    assert(isfile(setPath), 'Dataset not found:\n%s\nFallback:\n%s', ...
+        char(manifestPath), char(setPath));
+end
 
-    textValue = regexprep(textValue, '[,;\[\]\(\)]', ' ');
-    tokens = regexp(char(textValue), '[-+]?\d+', 'match');
+function dipoles = validate_epoched_dataset_local(EEG, row, spec, sourceICACache)
+    assert(EEG.trials == row.TimewarpAccepted, ...
+        'Epoch count mismatch for %s: expected %d, found %d.', ...
+        char(spec.subject), row.TimewarpAccepted, EEG.trials);
+    assert(strcmpi(strtrim(string(EEG.subject)), row.Subject) && ...
+        strcmpi(strtrim(string(EEG.condition)), row.ConditionCode), ...
+        'Subject/condition mismatch: %s', char(row.OutputSet));
+    assert(isfield(EEG, 'etc') && isfield(EEG.etc, 'rhs_epoching') && ...
+        isfield(EEG.etc.rhs_epoching, 'source_set_path') && ...
+        isfield(EEG.etc.rhs_epoching, 'run_number'), ...
+        'Step10 source/run metadata are missing: %s', char(row.OutputSet));
+    epochInfo = EEG.etc.rhs_epoching;
+    assert(isequal(double(epochInfo.run_number), row.RunNumber), ...
+        'Physical run mismatch: %s', char(row.OutputSet));
 
-    if isempty(tokens)
-        icList = zeros(1, 0);
-        return;
+    % Continuous source, current review and every epoch must share one ICA.
+    sourceSetPath = string(epochInfo.source_set_path);
+    [sourceFolder, sourceName, sourceExtension] = fileparts(char(sourceSetPath));
+    assert(strcmpi(string(sourceName) + string(sourceExtension), spec.reviewDatasetFile), ...
+        'Manual review belongs to a different continuous source dataset: %s', ...
+        char(spec.subject));
+    sourceKey = char(sourceSetPath);
+    if isKey(sourceICACache, sourceKey)
+        sourceIdentity = string(sourceICACache(sourceKey));
+    else
+        assert(isfile(sourceSetPath), 'Continuous source dataset was not found: %s', sourceKey);
+        source = pop_loadset('filename', [sourceName sourceExtension], ...
+            'filepath', sourceFolder, 'loadmode', 'info');
+        sourceIdentity = string(hipexo.ica_identity_signature(source));
+        sourceICACache(sourceKey) = char(sourceIdentity);
+    end
+    assert(sourceIdentity == spec.reviewIdentity, ...
+        ['Current manual selections do not match the continuous source ICA for %s.\n' ...
+         'Update Step09 against the current Step08-approved dataset.'], char(spec.subject));
+    epochIdentity = string(hipexo.ica_identity_signature(EEG));
+    assert(epochIdentity == spec.reviewIdentity, ...
+        ['Epoch ICA does not match the reviewed source ICA for %s:\n%s\n' ...
+         'The review matches the source. Repair the Step10 ICA metadata for this subject; ' ...
+         'do not redo the manual review.'], char(spec.subject), char(row.OutputSet));
+
+    % The signature check above also validates the ICA matrix structure.
+    nICs = size(EEG.icaweights, 1);
+    assert(all(spec.yesICs <= nICs), 'Selected IC index exceeds %d for %s.', ...
+        nICs, char(spec.subject));
+    assert(isfield(EEG, 'dipfit') && isfield(EEG.dipfit, 'model') && ...
+        numel(EEG.dipfit.model) >= nICs, 'DIPFIT model is missing/incomplete: %s', ...
+        char(row.OutputSet));
+    dipoles = cell(1, numel(spec.yesICs));
+    for k = 1:numel(spec.yesICs)
+        ic = spec.yesICs(k);
+        model = EEG.dipfit.model(ic);
+        assert(isfield(model, 'posxyz') && ~isempty(model.posxyz) && ...
+            all(isfinite(double(model.posxyz(:)))), ...
+            'Selected IC %d has no valid DIPFIT coordinate: %s', ic, char(row.OutputSet));
+        dipoles{k} = double(model.posxyz);
     end
 
-    icList = str2double(tokens);
-    icList = icList(:)';
+    % Five protocol landmarks: RHS, LTO, LHS, RTO, next RHS.
+    assert(isfield(EEG, 'timewarp') && isfield(EEG.timewarp, 'latencies') && ...
+        isfield(EEG.timewarp, 'warpto'), 'Timewarp metadata are missing: %s', char(row.OutputSet));
+    latencies = double(EEG.timewarp.latencies);
+    warpto = double(EEG.timewarp.warpto(:));
+    assert(isequal(size(latencies), [EEG.trials, 5]) && numel(warpto) == 5, ...
+        'Timewarp must contain five landmarks per epoch: %s', char(row.OutputSet));
+    intervals = diff(latencies, 1, 2);
+    assert(all(isfinite(latencies(:))) && all(intervals(:) > 0) && ...
+        all(isfinite(warpto)) && all(diff(warpto) > 0), ...
+        'Invalid RHS-LTO-LHS-RTO-nextRHS timewarp order: %s', char(row.OutputSet));
+end
 
-    if any(~isfinite(icList) | icList < 1 | ...
-            icList ~= round(icList))
-        error('Invalid IC list in RHS manifest: %s', textValue);
-    end
-
-    if numel(unique(icList)) ~= numel(icList)
-        error('Duplicate IC index in RHS manifest: %s', textValue);
+function canReuse = existing_study_is_current_local(studyPath, inputSignature, ...
+        manifest, specs, subjectIndex, cfg, setPaths)
+    canReuse = false;
+    try
+        % Retain short-name loading for long Windows project paths.
+        [folder, name, ext] = fileparts(studyPath);
+        originalFolder = pwd;
+        restoreFolder = onCleanup(@() cd(originalFolder));
+        cd(folder);
+        saved = load([name ext], '-mat', 'STUDY');
+        clear restoreFolder;
+        if ~strcmp(string(saved.STUDY.etc.rhs_epoched_study.input_signature), ...
+                string(inputSignature))
+            return;
+        end
+        verify_study_local(saved.STUDY, manifest, specs, subjectIndex, cfg, setPaths);
+        canReuse = true;
+    catch ME
+        fprintf('Existing STUDY cannot be reused: %s\n', ME.message);
     end
 end
 
-
-function setPath = resolve_set_path_local( ...
-        manifestPath, ...
-        datasetLabel, ...
-        epochedSetRoot)
-
-
-    manifestPath = ...
-        string(manifestPath);
-
-
-    % First use exact path recorded by epoch manifest.
-    if strlength(manifestPath) > 0 && ...
-            exist(char(manifestPath), 'file') == 2
-
-        setPath = ...
-            manifestPath;
-
-        return;
-
+function verify_study_local(STUDY, manifest, specs, subjectIndex, cfg, setPaths)
+    assert(isfield(STUDY, 'datasetinfo') && ...
+        numel(STUDY.datasetinfo) == height(manifest), 'STUDY dataset count is incorrect.');
+    for i = 1:height(manifest)
+        info = STUDY.datasetinfo(i);
+        assert(strcmp(string(info.subject), manifest.Subject(i)) && ...
+            strcmp(string(info.condition), manifest.ConditionCode(i)), ...
+            'STUDY dataset %d has an incorrect subject/condition.', i);
+        assert(isequal(double(info.session), double(cfg.sharedICASession)) && ...
+            isequal(double(info.run), manifest.RunNumber(i)) && ...
+            strcmpi(string(info.group), string(cfg.groupLabel)), ...
+            'STUDY dataset %d has an incorrect ICA session, physical run or group.', i);
+        assert(isequal(sort(double(info.comps(:)')), specs(subjectIndex(i)).yesICs), ...
+            'STUDY dataset %d does not match the current manual Yes ICs.', i);
+        observedPath = string(fullfile(info.filepath, info.filename));
+        assert(strcmpi(observedPath, setPaths(i)), ...
+            'STUDY dataset %d points to a different .set file.', i);
     end
-
-
-    % Fallback using current project output root.
-    [~, stem, ext] = ...
-        fileparts(char(manifestPath));
-
-
-    if isempty(ext)
-
-        ext = '.set';
-
-    end
-
-
-    if isempty(stem)
-
-        error([ ...
-            'OutputSet is empty in manifest for dataset %s.'], ...
-            char(datasetLabel));
-
-    end
-
-
-    candidate = fullfile( ...
-        epochedSetRoot, ...
-        char(datasetLabel), ...
-        [stem ext]);
-
-
-    if exist(candidate, 'file') ~= 2
-
-        error([ ...
-            'Could not resolve dataset path.\n\n' ...
-            'Manifest path:\n%s\n\n' ...
-            'Fallback path:\n%s'], ...
-            char(manifestPath), ...
-            candidate);
-
-    end
-
-
-    setPath = ...
-        string(candidate);
-
+    assert(isfield(STUDY, 'cluster') && ~isempty(STUDY.cluster), ...
+        'The STUDY parent component cluster was not created.');
 end
 
-
-function specIndex = find_subject_spec_local( ...
-        subjectSpecs, ...
-        subject)
-
-
-    subjects = ...
-        string({subjectSpecs.subject});
-
-
-    specIndex = ...
-        find(subjects == string(subject));
-
-
-    if numel(specIndex) ~= 1
-
-        error( ...
-            'Could not uniquely identify subject: %s', ...
-            char(string(subject)));
-
+function restoreRMS = suspend_ica_rms_local()
+% Keep the reviewed ICA weights unchanged during EEGLAB load/check operations.
+    eeglab_options;
+    previousScale = option_scaleicarms;
+    restoreRMS = [];
+    if previousScale ~= 0
+        restoreRMS = onCleanup(@() pop_editoptions('option_scaleicarms', previousScale));
+        pop_editoptions('option_scaleicarms', 0);
+        eeglab_options;
+        assert(option_scaleicarms == 0, 'Could not disable automatic ICA RMS scaling.');
     end
-
-end
-
-
-function validate_epoched_dataset_local( ...
-        EEG, ...
-        expectedSubject, ...
-        expectedCondition, ...
-        expectedRun, ...
-        expectedYesICs)
-
-
-    % Epoch structure
-
-    if EEG.trials < 2
-
-        error( ...
-            'Expected epoched data with >1 trial.');
-
-    end
-
-
-    % Sampling rate
-
-    if abs(double(EEG.srate) - 500) > 1e-6
-
-        error( ...
-            'Expected 500 Hz, found %.12g Hz.', ...
-            EEG.srate);
-
-    end
-
-
-    % Subject
-
-    if ~strcmpi( ...
-            strtrim(string(EEG.subject)), ...
-            string(expectedSubject))
-
-        error( ...
-            'Unexpected EEG.subject: %s', ...
-            char(string(EEG.subject)));
-
-    end
-
-
-    % Condition
-
-    if ~strcmpi( ...
-            strtrim(string(EEG.condition)), ...
-            string(expectedCondition))
-
-        error( ...
-            'Unexpected EEG.condition: %s', ...
-            char(string(EEG.condition)));
-
-    end
-
-
-    % ICA
-
-    if isempty(EEG.icaweights) || ...
-            isempty(EEG.icasphere)
-
-        error( ...
-            'ICA decomposition is missing.');
-
-    end
-
-
-    nICs = ...
-        size(EEG.icaweights, 1);
-
-
-    if any(expectedYesICs < 1) || ...
-            any(expectedYesICs > nICs)
-
-        error([ ...
-            'At least one selected Yes IC is outside ' ...
-            'the valid range 1:%d.'], ...
-            nICs);
-
-    end
-
-
-    % DIPFIT
-
-    if ~isfield(EEG, 'dipfit') || ...
-            ~isfield(EEG.dipfit, 'model') || ...
-            numel(EEG.dipfit.model) < nICs
-
-        error( ...
-            'DIPFIT model is missing/incomplete.');
-
-    end
-
-
-    % Yes IC provenance from RHS epoching
-
-    if ~isfield(EEG, 'etc') || ...
-            ~isfield(EEG.etc, 'rhs_epoching') || ...
-            ~isfield(EEG.etc.rhs_epoching, 'original_yes_ic')
-
-        error('EEG.etc.rhs_epoching.original_yes_ic is missing.');
-
-    end
-
-    storedYes = ...
-        double(EEG.etc.rhs_epoching.original_yes_ic(:))';
-
-    if ~isequal( ...
-            sort(storedYes), ...
-            sort(double(expectedYesICs(:))'))
-
-        error([ ...
-            'The Yes IC list stored in the RHS dataset does not match ' ...
-            'the current RHS epoch manifest.']);
-
-    end
-
-
-    % Selected IC dipoles
-
-    for ic = expectedYesICs(:)'
-
-        model = ...
-            EEG.dipfit.model(ic);
-
-
-        if ~isfield(model, 'posxyz') || ...
-                isempty(model.posxyz) || ...
-                any(~isfinite( ...
-                    double(model.posxyz(:))))
-
-            error( ...
-                'Selected IC %d has no valid DIPFIT coordinate.', ...
-                ic);
-
-        end
-
-    end
-
-
-    % RHS epoch metadata
-
-    if ~isfield(EEG.etc, 'rhs_epoching')
-
-        error( ...
-            'EEG.etc.rhs_epoching is missing.');
-
-    end
-
-
-    if ~isfield( ...
-            EEG.etc.rhs_epoching, ...
-            'run_number')
-
-        error( ...
-            'EEG.etc.rhs_epoching.run_number is missing.');
-
-    end
-
-
-    storedRun = ...
-        double( ...
-            EEG.etc.rhs_epoching.run_number);
-
-
-    if storedRun ~= double(expectedRun)
-
-        error( ...
-            'Run mismatch: expected %d, found %.12g.', ...
-            expectedRun, ...
-            storedRun);
-
-    end
-
-
-    % Timewarp
-
-    if ~isfield(EEG, 'timewarp') || ...
-            ~isfield( ...
-                EEG.timewarp, ...
-                'latencies') || ...
-            ~isfield( ...
-                EEG.timewarp, ...
-                'warpto')
-
-        error( ...
-            'EEG.timewarp is missing/incomplete.');
-
-    end
-
-
-    latencyMatrix = ...
-        double(EEG.timewarp.latencies);
-
-
-    if size(latencyMatrix, 1) ~= EEG.trials
-
-        error([ ...
-            'Timewarp rows (%d) do not match EEG.trials (%d).'], ...
-            size(latencyMatrix, 1), ...
-            EEG.trials);
-
-    end
-
-
-    if size(latencyMatrix, 2) ~= 5
-
-        error( ...
-            'Expected five gait landmarks per epoch.');
-
-    end
-
-
-    if numel(EEG.timewarp.warpto) ~= 5
-
-        error( ...
-            'Expected five EEG.timewarp.warpto values.');
-
-    end
-
-
-    if any(~isfinite(latencyMatrix(:)))
-
-        error( ...
-            'EEG.timewarp.latencies contains NaN/Inf.');
-
-    end
-
-
-    latencyDiff = ...
-        diff(latencyMatrix, 1, 2);
-
-
-    if any(latencyDiff(:) <= 0)
-
-        error([ ...
-            'One or more epochs violate ' ...
-            'RHS-LTO-LHS-RTO-nextRHS order.']);
-
-    end
-
-end
-
-
-function assert_same_ica_local( ...
-        EEGref, ...
-        EEGtest, ...
-        selectedICs, ...
-        subject, ...
-        referenceFile, ...
-        testFile)
-
-
-    tolerance = 1e-10;
-
-
-    assert_numeric_equal_local( ...
-        EEGref.icaweights, ...
-        EEGtest.icaweights, ...
-        tolerance, ...
-        'icaweights', ...
-        subject, ...
-        referenceFile, ...
-        testFile);
-
-
-    assert_numeric_equal_local( ...
-        EEGref.icasphere, ...
-        EEGtest.icasphere, ...
-        tolerance, ...
-        'icasphere', ...
-        subject, ...
-        referenceFile, ...
-        testFile);
-
-
-    if ~isequal( ...
-            double(EEGref.icachansind(:)), ...
-            double(EEGtest.icachansind(:)))
-
-        error([ ...
-            'icachansind differs between datasets for %s.\n\n' ...
-            'Reference:\n%s\n\n' ...
-            'Test:\n%s'], ...
-            char(subject), ...
-            char(referenceFile), ...
-            char(testFile));
-
-    end
-
-
-    for ic = selectedICs(:)'
-
-        refPos = ...
-            double( ...
-                EEGref.dipfit.model(ic).posxyz);
-
-        testPos = ...
-            double( ...
-                EEGtest.dipfit.model(ic).posxyz);
-
-
-        if ~isequaln(refPos, testPos)
-
-            error([ ...
-                'DIPFIT coordinate differs for IC %d of %s.\n\n' ...
-                'Reference:\n%s\n\n' ...
-                'Test:\n%s'], ...
-                ic, ...
-                char(subject), ...
-                char(referenceFile), ...
-                char(testFile));
-
-        end
-
-    end
-
-end
-
-
-function assert_numeric_equal_local( ...
-        A, ...
-        B, ...
-        tolerance, ...
-        fieldName, ...
-        subject, ...
-        referenceFile, ...
-        testFile)
-
-
-    if ~isequal(size(A), size(B))
-
-        error([ ...
-            '%s dimensions differ for %s.\n\n' ...
-            'Reference:\n%s\n\n' ...
-            'Test:\n%s'], ...
-            fieldName, ...
-            char(subject), ...
-            char(referenceFile), ...
-            char(testFile));
-
-    end
-
-
-    A = double(A);
-    B = double(B);
-
-
-    difference = ...
-        max(abs(A(:) - B(:)));
-
-
-    if isempty(difference)
-
-        difference = 0;
-
-    end
-
-
-    if ~isfinite(difference) || ...
-            difference > tolerance
-
-        error([ ...
-            '%s differs between run-separated datasets for %s.\n' ...
-            'Maximum absolute difference = %.16g\n\n' ...
-            'Reference:\n%s\n\n' ...
-            'Test:\n%s'], ...
-            fieldName, ...
-            char(subject), ...
-            difference, ...
-            char(referenceFile), ...
-            char(testFile));
-
-    end
-
-end
-
-
-function verify_study_local( ...
-        STUDY, ...
-        manifest, ...
-        subjectSpecs, ...
-        sharedICASession, ...
-        groupLabel)
-
-
-    nDatasets = ...
-        height(manifest);
-
-
-    if ~isfield(STUDY, 'datasetinfo')
-
-        error( ...
-            'STUDY.datasetinfo is missing.');
-
-    end
-
-
-    if numel(STUDY.datasetinfo) ~= ...
-            nDatasets
-
-        error( ...
-            'STUDY contains %d datasets; expected %d.', ...
-            numel(STUDY.datasetinfo), ...
-            nDatasets);
-
-    end
-
-
-    for i = 1:nDatasets
-
-        info = ...
-            STUDY.datasetinfo(i);
-
-
-        expectedSubject = ...
-            string(manifest.Subject(i));
-
-
-        expectedCondition = ...
-            string(manifest.ConditionCode(i));
-
-
-        expectedRun = ...
-            double(manifest.RunNumber(i));
-
-
-        specIndex = ...
-            find_subject_spec_local( ...
-                subjectSpecs, ...
-                expectedSubject);
-
-
-        expectedComps = ...
-            subjectSpecs(specIndex).yesICs;
-
-
-        %% Subject
-
-        if string(info.subject) ~= ...
-                expectedSubject
-
-            error( ...
-                'Dataset %d has wrong subject.', ...
-                i);
-
-        end
-
-
-        %% Condition
-
-        if string(info.condition) ~= ...
-                expectedCondition
-
-            error( ...
-                'Dataset %d has wrong condition.', ...
-                i);
-
-        end
-
-
-        %% Shared ICA session
-
-        if isempty(info.session) || ...
-                double(info.session) ~= ...
-                sharedICASession
-
-            error( ...
-                'Dataset %d does not use ICA session %d.', ...
-                i, ...
-                sharedICASession);
-
-        end
-
-
-        %% Physical run
-
-        if ~isfield(info, 'run') || ...
-                isempty(info.run) || ...
-                double(info.run) ~= expectedRun
-
-            error( ...
-                'Dataset %d has incorrect physical run.', ...
-                i);
-
-        end
-
-
-        %% Group
-
-        if ~strcmpi( ...
-                string(info.group), ...
-                string(groupLabel))
-
-            error( ...
-                'Dataset %d has incorrect group.', ...
-                i);
-
-        end
-
-
-        %% Component selection
-
-        if ~isfield(info, 'comps') || ...
-                isempty(info.comps)
-
-            error( ...
-                'Dataset %d has empty comps.', ...
-                i);
-
-        end
-
-
-        observedComps = ...
-            double(info.comps(:))';
-
-
-        if ~isequal( ...
-                sort(observedComps), ...
-                sort(double(expectedComps(:))'))
-
-            error([ ...
-                'Dataset %d comps do not match ' ...
-                'the current manifest-derived Yes IC list.'], ...
-                i);
-
-        end
-
-    end
-
-
-    % One ICA session per subject
-
-    for s = 1:numel(subjectSpecs)
-
-        subject = ...
-            subjectSpecs(s).subject;
-
-
-        rows = find( ...
-            string({STUDY.datasetinfo.subject}) == ...
-            subject);
-
-
-        sessions = ...
-            double([ ...
-                STUDY.datasetinfo(rows).session]);
-
-
-        if numel(unique(sessions)) ~= 1 || ...
-                unique(sessions) ~= ...
-                sharedICASession
-
-            error( ...
-                '%s does not have one shared ICA session.', ...
-                char(subject));
-
-        end
-
-
-        for r = rows
-
-            observed = ...
-                double( ...
-                    STUDY.datasetinfo(r).comps(:))';
-
-
-            expected = ...
-                double( ...
-                    subjectSpecs(s).yesICs(:))';
-
-
-            if ~isequal( ...
-                    sort(observed), ...
-                    sort(expected))
-
-                error( ...
-                    '%s has inconsistent selected ICs.', ...
-                    char(subject));
-
-            end
-
-        end
-
-    end
-
-
-    if ~isfield(STUDY, 'cluster') || ...
-            isempty(STUDY.cluster)
-
-        error([ ...
-            'The STUDY parent component cluster ' ...
-            'was not created.']);
-
-    end
-
-end
-
-
-function value = scalar_numeric_local(raw)
-
-
-    value = NaN;
-
-
-    if isempty(raw)
-
-        return;
-
-    end
-
-
-    if isnumeric(raw) && ...
-            isscalar(raw)
-
-        value = ...
-            double(raw);
-
-        return;
-
-    end
-
-
-    parsed = ...
-        str2double(string(raw));
-
-
-    if isscalar(parsed) && ...
-            isfinite(parsed)
-
-        value = ...
-            parsed;
-
-    end
-
 end

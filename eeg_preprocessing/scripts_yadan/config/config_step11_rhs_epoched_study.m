@@ -1,15 +1,22 @@
 function cfg = config_step11_rhs_epoched_study()
 % GOAL
 %   Define metadata and output settings for the run-separated RHS STUDY.
+%
+% INPUT
+%   None.
+%
+% OUTPUT
+%   cfg - settings used by step11_create_rhs_epoched_study.m.
+%
 % METHOD
 %   Store STUDY metadata, condition ordering, and output names here.
-%   Dataset identities, dataset counts, run coverage, and IC selections are
-%   read from the current Step 10 manifest.
+%   Dataset identities and run coverage come from the Step10 manifest.
+%   Component selections come from the current identity-bound manual review.
 
 %% Processing identity
 
 cfg.processingVersion = ...
-    "RHS_epoched_STUDY_dynamic";
+    "RHS_epoched_STUDY_dynamic_reuse";
 
 %% STUDY metadata
 
@@ -27,7 +34,7 @@ cfg.sharedICASession = ...
 
 %% Rebuild behavior
 
-cfg.forceRebuild = true;
+cfg.forceRebuild = false;
 
 %% Input / output names
 
@@ -43,16 +50,12 @@ cfg.manifestFileName = ...
 cfg.studyFolderName = ...
     '02_RHS-epoched-STUDY';
 
+cfg.datasetInfoCSVName = ...
+    '02_RHS_epoched_STUDY_datasetinfo.csv';
+
 %% Condition order
 
-cfg.conditionOrder = [ ...
-    "NoExoPre", ...
-    "AquaPlus", ...
-    "Aqua", ...
-    "Transparent", ...
-    "Exo", ...
-    "Sport", ...
-    "Boost", ...
-    "NoExoPost"];
+conditions = config_analysis_conditions();
+cfg.conditionOrder = conditions.Code';
 
 end

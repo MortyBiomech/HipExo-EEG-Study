@@ -1,182 +1,305 @@
+function step02_build_import_table()
 % GOAL
-%   Build the run-level BeMoBIL import-control table from the structural XDF
-%   EEG/GRF audit generated in Step 01.
+%   Build the run-level HipExo recording-control table from the structural
+%   XDF EEG/GRF audit generated in Step 01.
+%
 % INPUT
 %   output_data/xdf_file_stream_summary.csv
 %   output_data/xdf_stream_detail_table.csv
+%
 % APPROACH
-%   1. Keep every XDF containing a real EEG stream visible in the table.
-%   2. Resolve XDF paths against the current raw-data root.
-%   3. Select the usable EEG/GRF stream metadata for each recording.
-%   4. Apply the configured run, backup-file, non-walking, EEG, and GRF gates.
-%   5. Preserve a manual DoImport decision only when source identity is unchanged.
+%   1. Validate and normalize the Step 01 audit tables.
+%   2. Remove filename versions matching _old*.xdf, then create canonical
+%      subject, session, task, and run identities.
+%   3. Select EEG and GRF candidate metadata independently.
+%   4. Define one structural gait-analysis candidate gate requiring usable
+%      EEG, usable GRF, an allowed run, and a walking recording.
+%   5. Keep DoBIDSImport, DoGaitAnalysis, and DoImport synchronized to this
+%      candidate gate. Final gait-EEG eligibility is decided in Step 04.
+%   6. Retain valid saved decisions, disable duplicate BIDS keys, and save
+%      the run-level control table.
+%
 % OUTPUT
 %   output_data/bemobil_import_table.csv
+
 % USED BY
-%   Step 03 GRF/EEG subject processing and later EEG import/preprocessing.
+%   step02b_standardize_xdf_to_bids.m and later processing steps.
 
-clear;
-clc;
+% Bootstrap project
 
-%% Load paths and Step 01-02 configuration
+thisFile = mfilename('fullpath');
 
-scriptsRoot = fileparts(fileparts(mfilename('fullpath')));
+if isempty(thisFile)
+    error('Could not resolve the current Step file path.');
+end
+
+scriptsRoot = fileparts(fileparts(thisFile));
+
 addpath(scriptsRoot, '-begin');
 addpath(fullfile(scriptsRoot, 'config'), '-begin');
 
 P = project_paths();
 cfg = config_step01_02_xdf_import();
 
-summaryFile = P.summaryFile;
-detailFile = P.detailFile;
+summaryFile    = P.summaryFile;
+detailFile     = P.detailFile;
 importTableFile = P.importTableFile;
-rawDataFolder = P.rawDataFolder;
+rawDataFolder  = P.rawDataFolder;
 
-if ~isfile(summaryFile)
-    error( ...
-        'Step 01 summary table not found:\n%s\nRun step01_check_xdf_streams.m first.', ...
-        summaryFile);
-end
+assert( ...
+    isfile(summaryFile), ...
+    ['Step 01 summary table not found:\n%s\n' ...
+     'Run step01_check_xdf_streams.m first.'], ...
+    summaryFile);
 
-if ~isfile(detailFile)
-    error( ...
-        'Step 01 stream-detail table not found:\n%s\nRun step01_check_xdf_streams.m first.', ...
-        detailFile);
-end
+assert( ...
+    isfile(detailFile), ...
+    ['Step 01 stream-detail table not found:\n%s\n' ...
+     'Run step01_check_xdf_streams.m first.'], ...
+    detailFile);
 
-%% Read CSV tables
+% Read Step 01 audit tables
 
-optsSummary = detectImportOptions(summaryFile, ...
+optsSummary = detectImportOptions( ...
+    summaryFile, ...
     'FileType', 'text', ...
     'Delimiter', ',', ...
     'VariableNamingRule', 'preserve');
 
-optsDetail = detectImportOptions(detailFile, ...
+optsDetail = detectImportOptions( ...
+    detailFile, ...
     'FileType', 'text', ...
     'Delimiter', ',', ...
     'VariableNamingRule', 'preserve');
 
-fileSummary  = readtable(summaryFile, optsSummary);
+fileSummary = readtable(summaryFile, optsSummary);
 streamDetail = readtable(detailFile, optsDetail);
 
-fprintf('Loaded file summary table: %d rows\n', height(fileSummary));
-fprintf('Loaded stream detail table: %d rows\n', height(streamDetail));
+% Required columns
 
-fprintf('\nFile summary column names:\n');
-disp(fileSummary.Properties.VariableNames');
+requiredSummaryColumns = { ...
+    'FileIndex', ...
+    'FileName', ...
+    'FullPath', ...
+    'HasRealEEG', ...
+    'HasUsableEEG', ...
+    'FileEEGQualityStatus', ...
+    'FileEEGQualityReason', ...
+    'HasGRFStream', ...
+    'HasUsableGRF', ...
+    'FileGRFQualityStatus', ...
+    'FileGRFQualityReason'};
 
-fprintf('\nStream detail column names:\n');
-disp(streamDetail.Properties.VariableNames');
+requiredDetailColumns = { ...
+    'FileIndex', ...
+    'FileName', ...
+    'FullPath', ...
+    'StreamIndex', ...
+    'StreamName', ...
+    'StreamType', ...
+    'NominalSrate', ...
+    'ChannelCount', ...
+    'IsRealEEG', ...
+    'IsUsableEEG', ...
+    'IsGRFCandidate', ...
+    'IsUsableGRF', ...
+    'NDataSamples', ...
+    'NTimeStamps', ...
+    'DurationSec', ...
+    'EffectiveSrate', ...
+    'MaxDtSec', ...
+    'EEGQualityStatus', ...
+    'EEGQualityReason', ...
+    'GRFQualityStatus', ...
+    'GRFQualityReason'};
 
-%% Make sure required columns exist
+check_required_columns( ...
+    fileSummary, ...
+    requiredSummaryColumns, ...
+    'file summary table');
 
-requiredSummaryColumns = {'FileIndex', 'FileName', 'FullPath', ...
-                          'HasRealEEG', 'HasUsableEEG', ...
-                          'FileEEGQualityStatus', 'FileEEGQualityReason', ...
-                          'HasGRFStream', 'HasUsableGRF', ...
-                          'FileGRFQualityStatus', 'FileGRFQualityReason'};
+check_required_columns( ...
+    streamDetail, ...
+    requiredDetailColumns, ...
+    'stream detail table');
 
-requiredDetailColumns = {'FileIndex', 'FileName', 'FullPath', 'StreamIndex', ...
-                         'StreamName', 'StreamType', 'NominalSrate', ...
-                         'ChannelCount', 'IsRealEEG', 'IsUsableEEG', ...
-                         'IsGRFCandidate', 'IsUsableGRF', ...
-                         'NDataSamples', 'NTimeStamps', 'DurationSec', ...
-                         'EffectiveSrate', 'MaxDtSec', ...
-                         'EEGQualityStatus', 'EEGQualityReason', ...
-                         'GRFQualityStatus', 'GRFQualityReason'};
+% Normalize table types
 
-check_required_columns(fileSummary, requiredSummaryColumns, 'file summary table');
-check_required_columns(streamDetail, requiredDetailColumns, 'stream detail table');
+fileSummary.FileIndex = ...
+    to_numeric_column(fileSummary.FileIndex);
 
-%% Convert important columns
+streamDetail.FileIndex = ...
+    to_numeric_column(streamDetail.FileIndex);
 
-fileSummary.FileIndex = to_numeric_column(fileSummary.FileIndex);
-streamDetail.FileIndex = to_numeric_column(streamDetail.FileIndex);
-streamDetail.StreamIndex = to_numeric_column(streamDetail.StreamIndex);
+streamDetail.StreamIndex = ...
+    to_numeric_column(streamDetail.StreamIndex);
 
-fileSummary.HasRealEEG   = to_logical_column(fileSummary.HasRealEEG);
-fileSummary.HasUsableEEG = to_logical_column(fileSummary.HasUsableEEG);
-fileSummary.HasGRFStream = to_logical_column(fileSummary.HasGRFStream);
-fileSummary.HasUsableGRF = to_logical_column(fileSummary.HasUsableGRF);
-streamDetail.IsRealEEG   = to_logical_column(streamDetail.IsRealEEG);
-streamDetail.IsUsableEEG = to_logical_column(streamDetail.IsUsableEEG);
-streamDetail.IsGRFCandidate = to_logical_column(streamDetail.IsGRFCandidate);
-streamDetail.IsUsableGRF = to_logical_column(streamDetail.IsUsableGRF);
+fileSummary.HasRealEEG = ...
+    to_logical_column(fileSummary.HasRealEEG);
 
-%% Convert text columns
+fileSummary.HasUsableEEG = ...
+    to_logical_column(fileSummary.HasUsableEEG);
 
-fileSummary.FileName = string(fileSummary.FileName);
-fileSummary.FullPath = string(fileSummary.FullPath);
-fileSummary.FileEEGQualityStatus = string(fileSummary.FileEEGQualityStatus);
-fileSummary.FileEEGQualityReason = string(fileSummary.FileEEGQualityReason);
-fileSummary.FileGRFQualityStatus = string(fileSummary.FileGRFQualityStatus);
-fileSummary.FileGRFQualityReason = string(fileSummary.FileGRFQualityReason);
+fileSummary.HasGRFStream = ...
+    to_logical_column(fileSummary.HasGRFStream);
 
-streamDetail.FileName = string(streamDetail.FileName);
-streamDetail.FullPath = string(streamDetail.FullPath);
-streamDetail.StreamName = string(streamDetail.StreamName);
-streamDetail.StreamType = string(streamDetail.StreamType);
-streamDetail.NominalSrate = string(streamDetail.NominalSrate);
-streamDetail.ChannelCount = string(streamDetail.ChannelCount);
+fileSummary.HasUsableGRF = ...
+    to_logical_column(fileSummary.HasUsableGRF);
 
-streamDetail.EEGQualityStatus = string(streamDetail.EEGQualityStatus);
-streamDetail.EEGQualityReason = string(streamDetail.EEGQualityReason);
-streamDetail.GRFQualityStatus = string(streamDetail.GRFQualityStatus);
-streamDetail.GRFQualityReason = string(streamDetail.GRFQualityReason);
+streamDetail.IsRealEEG = ...
+    to_logical_column(streamDetail.IsRealEEG);
 
-%% Prepare output arrays
+streamDetail.IsUsableEEG = ...
+    to_logical_column(streamDetail.IsUsableEEG);
 
-DoImport          = [];
-XdfPath           = strings(0, 1);
-FileName          = strings(0, 1);
-RawSubjectFolder  = strings(0, 1);
-RawDayFolder      = strings(0, 1);
-RawSessionFolder  = strings(0, 1);
-BidsSubject       = [];
-BidsSession       = strings(0, 1);
-Task              = strings(0, 1);
-RunNumber         = strings(0, 1);
-ExtraTag          = strings(0, 1);
-EEGStreamName     = strings(0, 1);
-NominalSrate      = strings(0, 1);
-ChannelCount      = strings(0, 1);
+streamDetail.IsGRFCandidate = ...
+    to_logical_column(streamDetail.IsGRFCandidate);
 
-HasUsableEEG      = [];
+streamDetail.IsUsableGRF = ...
+    to_logical_column(streamDetail.IsUsableGRF);
+
+fileSummary.FileName = ...
+    string(fileSummary.FileName);
+
+fileSummary.FullPath = ...
+    string(fileSummary.FullPath);
+
+fileSummary.FileEEGQualityStatus = ...
+    string(fileSummary.FileEEGQualityStatus);
+
+fileSummary.FileEEGQualityReason = ...
+    string(fileSummary.FileEEGQualityReason);
+
+fileSummary.FileGRFQualityStatus = ...
+    string(fileSummary.FileGRFQualityStatus);
+
+fileSummary.FileGRFQualityReason = ...
+    string(fileSummary.FileGRFQualityReason);
+
+streamDetail.FileName = ...
+    string(streamDetail.FileName);
+
+streamDetail.FullPath = ...
+    string(streamDetail.FullPath);
+
+streamDetail.StreamName = ...
+    string(streamDetail.StreamName);
+
+streamDetail.StreamType = ...
+    string(streamDetail.StreamType);
+
+streamDetail.NominalSrate = ...
+    string(streamDetail.NominalSrate);
+
+streamDetail.ChannelCount = ...
+    string(streamDetail.ChannelCount);
+
+streamDetail.EEGQualityStatus = ...
+    string(streamDetail.EEGQualityStatus);
+
+streamDetail.EEGQualityReason = ...
+    string(streamDetail.EEGQualityReason);
+
+streamDetail.GRFQualityStatus = ...
+    string(streamDetail.GRFQualityStatus);
+
+streamDetail.GRFQualityReason = ...
+    string(streamDetail.GRFQualityReason);
+
+% Remove old XDF versions before constructing the import table.
+
+isOldSummaryRow = ...
+    ~cellfun( ...
+        @isempty, ...
+        regexpi( ...
+            cellstr(fileSummary.FileName), ...
+            char(cfg.import.oldFileRegex)));
+
+if any(isOldSummaryRow)
+
+    oldPaths = ...
+        fileSummary.FullPath(isOldSummaryRow);
+
+    fileSummary = ...
+        fileSummary(~isOldSummaryRow, :);
+
+    streamDetail = ...
+        streamDetail( ...
+            ~ismember(streamDetail.FullPath, oldPaths), ...
+            :);
+end
+
+% Prepare output arrays
+
+DoBIDSImport = [];
+DoGaitAnalysis = [];
+DoImport = [];
+
+BIDSImportReason = strings(0, 1);
+GaitAnalysisReason = strings(0, 1);
+
+XdfPath = strings(0, 1);
+FileName = strings(0, 1);
+
+RawSubjectFolder = strings(0, 1);
+RawDayFolder = strings(0, 1);
+RawSessionFolder = strings(0, 1);
+
+OriginalSubjectID = strings(0, 1);
+SubjectID = strings(0, 1);
+
+BidsSubject = [];
+BidsSubjectLabel = strings(0, 1);
+BidsSession = strings(0, 1);
+
+Task = strings(0, 1);
+RunNumber = strings(0, 1);
+ExtraTag = strings(0, 1);
+
+EEGStreamName = strings(0, 1);
+NominalSrate = strings(0, 1);
+ChannelCount = strings(0, 1);
+
+HasUsableEEG = [];
 SelectedStreamIndex = [];
-EEGQualityStatus  = strings(0, 1);
-EEGQualityReason  = strings(0, 1);
-DurationSec       = [];
-EffectiveSrate    = [];
-MaxDtSec          = [];
-NDataSamples      = [];
-NTimeStamps       = [];
+EEGQualityStatus = strings(0, 1);
+EEGQualityReason = strings(0, 1);
 
-HasGRFStream      = [];
-HasUsableGRF      = [];
+DurationSec = [];
+EffectiveSrate = [];
+MaxDtSec = [];
+NDataSamples = [];
+NTimeStamps = [];
+
+HasGRFStream = [];
+HasUsableGRF = [];
 SelectedGRFStreamIndex = [];
-GRFStreamName     = strings(0, 1);
-GRFNominalSrate   = strings(0, 1);
-GRFChannelCount   = strings(0, 1);
-GRFQualityStatus  = strings(0, 1);
-GRFQualityReason  = strings(0, 1);
-GRFDurationSec    = [];
-GRFEffectiveSrate = [];
-GRFMaxDtSec       = [];
-GRFNDataSamples   = [];
-GRFNTimeStamps    = [];
 
-%% Build import table from files with real EEG streams
+GRFStreamName = strings(0, 1);
+GRFNominalSrate = strings(0, 1);
+GRFChannelCount = strings(0, 1);
+
+GRFQualityStatus = strings(0, 1);
+GRFQualityReason = strings(0, 1);
+
+GRFDurationSec = [];
+GRFEffectiveSrate = [];
+GRFMaxDtSec = [];
+GRFNDataSamples = [];
+GRFNTimeStamps = [];
+
+% Build one row per XDF containing a real EEG stream
 
 eegRows = find(fileSummary.HasRealEEG);
 
-fprintf('\nFound %d files with real EEG streams in summary table.\n', numel(eegRows));
-
 if isempty(eegRows)
+
     error([ ...
         'The XDF QC summary contains zero files with real EEG.' newline ...
         'No import table was written.' newline newline ...
         'Correct rawDataFolder in project_paths.m and rerun ' ...
         'step01_check_xdf_streams.m before running this script.']);
+
 end
 
 nRebasedXdfPaths = 0;
@@ -185,88 +308,150 @@ for k = 1:numel(eegRows)
 
     r = eegRows(k);
 
-    thisFileIndex = fileSummary.FileIndex(r);
-    thisFileName  = string(fileSummary.FileName(r));
-    thisFullPath  = string(fileSummary.FullPath(r));
-    thisHasUsableEEG = logical(fileSummary.HasUsableEEG(r));
-    thisHasGRFStream = logical(fileSummary.HasGRFStream(r));
-    thisHasUsableGRF = logical(fileSummary.HasUsableGRF(r));
+    thisFileIndex = ...
+        fileSummary.FileIndex(r);
+
+    thisFileName = ...
+        string(fileSummary.FileName(r));
+
+    thisFullPath = ...
+        string(fileSummary.FullPath(r));
+
+    thisHasUsableEEG = ...
+        logical(fileSummary.HasUsableEEG(r));
+
+    thisHasGRFStream = ...
+        logical(fileSummary.HasGRFStream(r));
+
+    thisHasUsableGRF = ...
+        logical(fileSummary.HasUsableGRF(r));
+
     thisFileGRFQualityStatus = ...
         string(fileSummary.FileGRFQualityStatus(r));
+
     thisFileGRFQualityReason = ...
         string(fileSummary.FileGRFQualityReason(r));
 
     xdfPathChar = char(thisFullPath);
 
-    %% Parse raw folder information from full path
+    % Parse acquisition-folder identity
 
-    % Example path:
-    % E:\...\raw_data_PilotTest2\Sub-P2_1\day2\data\ses-Exo1_sport\eeg\xxx.xdf
-
-    pathTok = regexp(xdfPathChar, ...
-        '[\\/](?<rawSubject>Sub-P\d+_\d+)[\\/](?<rawDay>day\d+)[\\/]data[\\/](?<rawSession>ses-[^\\/]+)[\\/]eeg[\\/]', ...
-        'names', 'once');
+    pathTok = regexpi( ...
+        xdfPathChar, ...
+        ['[\\/](?<rawSubject>Sub-(?:P|Pilot)\d+_\d+)' ...
+         '[\\/](?<rawDay>day\d+)' ...
+         '(?:[\\/]data)?' ...
+         '[\\/](?<rawSession>ses-[^\\/]+)' ...
+         '[\\/]eeg[\\/]'], ...
+        'names', ...
+        'once');
 
     if isempty(pathTok)
-        error(['Could not parse a real-EEG XDF path:\n%s\n' ...
-            'No import table was written. Fix the path schema or update the path regexp explicitly.'], ...
+
+        error( ...
+            ['Could not parse a real-EEG XDF path:\n%s\n' ...
+             'No import table was written.'], ...
             xdfPathChar);
+
     end
 
-    rawSubject = string(pathTok.rawSubject);
-    rawDay     = string(pathTok.rawDay);
-    rawSession = string(pathTok.rawSession);
+    rawSubject = ...
+        string(pathTok.rawSubject);
 
-    %% Resolve the XDF below the current raw-data root
+    rawDay = ...
+        string(pathTok.rawDay);
 
-    resolvedXdfPath = hipexo.resolve_current_xdf_path( ...
-        thisFullPath, ...
-        rawDataFolder, ...
-        rawSubject, ...
-        rawDay, ...
-        rawSession, ...
-        thisFileName);
+    rawSession = ...
+        string(pathTok.rawSession);
+
+    % Resolve current XDF path
+
+    resolvedXdfPath = ...
+        hipexo.resolve_current_xdf_path( ...
+            thisFullPath, ...
+            rawDataFolder, ...
+            rawSubject, ...
+            rawDay, ...
+            rawSession, ...
+            thisFileName);
 
     if resolvedXdfPath ~= thisFullPath
         nRebasedXdfPaths = nRebasedXdfPaths + 1;
     end
 
-    %% Parse pilot number and subject number from Sub-P2_1
+    % Participant identity
 
-    subjTok = regexp(char(rawSubject), ...
-        'Sub-P(?<pilot>\d+)_(?<subject>\d+)', ...
-        'names', 'once');
+    subjTok = regexpi( ...
+        char(rawSubject), ...
+        'Sub-(?:P|Pilot)(?<pilot>\d+)_(?<subject>\d+)', ...
+        'names', ...
+        'once');
 
     if isempty(subjTok)
-        error('Could not parse subject folder for a real-EEG XDF: %s', rawSubject);
+
+        error( ...
+            'Could not parse subject folder: %s', ...
+            rawSubject);
+
     end
 
-    pilotNumber = subjTok.pilot;
-    subjectNumber = str2double(subjTok.subject);
+    pilotNumber = ...
+        subjTok.pilot;
 
-    if isnan(subjectNumber)
-        error('Invalid subject number for a real-EEG XDF: %s', rawSubject);
+    subjectNumber = ...
+        str2double(subjTok.subject);
+
+    if ~isfinite(subjectNumber)
+
+        error( ...
+            'Invalid subject number: %s', ...
+            rawSubject);
+
     end
 
-    %% Create BIDS subject and session labels
+    % Canonical anonymous subject identity
+    %
+    %   sub-Pilot2_1 -> sub-01
+    %   sub-Pilot2_2 -> sub-02
+    %   ...
+    %
+    % No fixed subject count is used.
 
-    % Use the parsed subject number as the BIDS subject ID:
-    %   Sub-P2_1 -> subject 1
-    %   Sub-P2_3 -> subject 3
-    bidsSubject = subjectNumber;
+    bidsSubject = ...
+        subjectNumber;
 
-    % Put raw source information into session label:
-    %   Sub-P2_1 + day2 + ses-Exo1_sport
-    %   -> Pilot2p1day2sesExo1Sport
-    % RunNumber is stored separately and passed to bemobil_xdf2bids as config.run.
-    pilotLabel = "Pilot" + string(pilotNumber) + "p" + string(subjectNumber);
-    sessionLabel = pilotLabel + rawDay + hipexo.make_bids_label(rawSession);
+    bidsSubjectLabel = ...
+        string(sprintf('%02d', round(subjectNumber)));
 
-    %% Parse task from file name
+    subjectID = ...
+        "sub-" + bidsSubjectLabel;
 
-    taskTok = regexp(char(thisFileName), ...
+    originalSubjectID = ...
+        "sub-Pilot" + ...
+        string(pilotNumber) + ...
+        "_" + ...
+        string(subjectNumber);
+
+    % BIDS session label
+
+    rawSessionWithoutPrefix = ...
+        regexprep( ...
+            rawSession, ...
+            '^ses-', ...
+            '', ...
+            'ignorecase');
+
+    sessionLabel = ...
+        hipexo.make_bids_label( ...
+            rawDay + rawSessionWithoutPrefix);
+
+    % Task
+
+    taskTok = regexp( ...
+        char(thisFileName), ...
         '_task-(?<task>[A-Za-z0-9]+)', ...
-        'names', 'once');
+        'names', ...
+        'once');
 
     if isempty(taskTok)
         taskLabel = "Default";
@@ -274,11 +459,13 @@ for k = 1:numel(eegRows)
         taskLabel = string(taskTok.task);
     end
 
-    %% Parse run number from file name
+    % Run
 
-    runTok = regexp(char(thisFileName), ...
+    runTok = regexp( ...
+        char(thisFileName), ...
         '_run-(?<run>\d+)', ...
-        'names', 'once');
+        'names', ...
+        'once');
 
     if isempty(runTok)
         runLabel = "";
@@ -286,105 +473,149 @@ for k = 1:numel(eegRows)
         runLabel = string(runTok.run);
     end
 
-    %% Find selected EEG stream for this file
+    % Select EEG stream
 
-    usableStreamRows = find(streamDetail.FileIndex == thisFileIndex & ...
-                            streamDetail.IsRealEEG & ...
-                            streamDetail.IsUsableEEG);
+    usableStreamRows = find( ...
+        streamDetail.FileIndex == thisFileIndex & ...
+        streamDetail.IsRealEEG & ...
+        streamDetail.IsUsableEEG);
 
-    realStreamRows = find(streamDetail.FileIndex == thisFileIndex & ...
-                          streamDetail.IsRealEEG);
+    realStreamRows = find( ...
+        streamDetail.FileIndex == thisFileIndex & ...
+        streamDetail.IsRealEEG);
 
-    exactUsableRows = usableStreamRows( ...
-        streamDetail.StreamName(usableStreamRows) == cfg.eeg.streamName);
+    exactUsableRows = ...
+        usableStreamRows( ...
+            streamDetail.StreamName(usableStreamRows) == ...
+            cfg.eeg.streamName);
 
     if ~isempty(exactUsableRows)
-        selectedStreamRow = exactUsableRows(1);
+
+        selectedStreamRow = ...
+            exactUsableRows(1);
+
     elseif ~isempty(usableStreamRows)
-        selectedStreamRow = usableStreamRows(1);
+
+        selectedStreamRow = ...
+            usableStreamRows(1);
+
     elseif ~isempty(realStreamRows)
-        selectedStreamRow = realStreamRows(1);
+
+        selectedStreamRow = ...
+            realStreamRows(1);
+
     else
-        warning('No real EEG stream found in detail table. Skipping:\n%s', thisFullPath);
+
+        warning( ...
+            'No real EEG stream found in detail table. Skipping:\n%s', ...
+            thisFullPath);
+
         continue;
+
     end
 
-    eegStream = string(streamDetail.StreamName(selectedStreamRow));
-    srate     = string(streamDetail.NominalSrate(selectedStreamRow));
-    nChan     = string(streamDetail.ChannelCount(selectedStreamRow));
+    eegStream = ...
+        string(streamDetail.StreamName(selectedStreamRow));
 
-    selectedStreamIndex = streamDetail.StreamIndex(selectedStreamRow);
+    srate = ...
+        string(streamDetail.NominalSrate(selectedStreamRow));
 
-    if ismember('DurationSec', streamDetail.Properties.VariableNames)
-        thisDurationSec = to_scalar_double(streamDetail.DurationSec(selectedStreamRow));
-    else
-        thisDurationSec = NaN;
-    end
+    nChan = ...
+        string(streamDetail.ChannelCount(selectedStreamRow));
 
-    if ismember('EffectiveSrate', streamDetail.Properties.VariableNames)
-        thisEffectiveSrate = to_scalar_double(streamDetail.EffectiveSrate(selectedStreamRow));
-    else
-        thisEffectiveSrate = NaN;
-    end
+    selectedStreamIndex = ...
+        streamDetail.StreamIndex(selectedStreamRow);
 
-    if ismember('MaxDtSec', streamDetail.Properties.VariableNames)
-        thisMaxDtSec = to_scalar_double(streamDetail.MaxDtSec(selectedStreamRow));
-    else
-        thisMaxDtSec = NaN;
-    end
+    thisDurationSec = ...
+        to_scalar_double( ...
+            streamDetail.DurationSec(selectedStreamRow));
 
-    if ismember('NDataSamples', streamDetail.Properties.VariableNames)
-        thisNDataSamples = to_scalar_double(streamDetail.NDataSamples(selectedStreamRow));
-    else
-        thisNDataSamples = NaN;
-    end
+    thisEffectiveSrate = ...
+        to_scalar_double( ...
+            streamDetail.EffectiveSrate(selectedStreamRow));
 
-    if ismember('NTimeStamps', streamDetail.Properties.VariableNames)
-        thisNTimeStamps = to_scalar_double(streamDetail.NTimeStamps(selectedStreamRow));
-    else
-        thisNTimeStamps = NaN;
-    end
+    thisMaxDtSec = ...
+        to_scalar_double( ...
+            streamDetail.MaxDtSec(selectedStreamRow));
 
-    thisQualityStatus = string(streamDetail.EEGQualityStatus(selectedStreamRow));
-    thisQualityReason = string(streamDetail.EEGQualityReason(selectedStreamRow));
+    thisNDataSamples = ...
+        to_scalar_double( ...
+            streamDetail.NDataSamples(selectedStreamRow));
+
+    thisNTimeStamps = ...
+        to_scalar_double( ...
+            streamDetail.NTimeStamps(selectedStreamRow));
+
+    thisQualityStatus = ...
+        string(streamDetail.EEGQualityStatus(selectedStreamRow));
+
+    thisQualityReason = ...
+        string(streamDetail.EEGQualityReason(selectedStreamRow));
 
     if strlength(thisQualityStatus) == 0
+
         if thisHasUsableEEG
+
             thisQualityStatus = "OK";
-            thisQualityReason = "usable_eeg_stream_found";
+            thisQualityReason = ...
+                "usable_eeg_stream_found";
+
         else
-            thisQualityStatus = "BAD_unknown";
-            thisQualityReason = "no_usable_eeg_stream_found";
+
+            thisQualityStatus = ...
+                "BAD_unknown";
+
+            thisQualityReason = ...
+                "no_usable_eeg_stream_found";
+
         end
+
     end
 
-    %% Find the GRF stream in the same XDF
+    % Select GRF candidate
+    %
+    % GRF is recorded here, but does NOT control DoBIDSImport.
 
     grfStreamRows = find( ...
         streamDetail.FileIndex == thisFileIndex & ...
         streamDetail.IsGRFCandidate);
 
     selectedGRFStreamIndex = NaN;
+
     grfStream = "";
     grfNominalSrate = "";
     grfChannelCount = "";
+
     thisGRFDurationSec = NaN;
     thisGRFEffectiveSrate = NaN;
     thisGRFMaxDtSec = NaN;
     thisGRFNDataSamples = NaN;
     thisGRFNTimeStamps = NaN;
-    thisGRFQualityStatus = thisFileGRFQualityStatus;
-    thisGRFQualityReason = thisFileGRFQualityReason;
+
+    thisGRFQualityStatus = ...
+        thisFileGRFQualityStatus;
+
+    thisGRFQualityReason = ...
+        thisFileGRFQualityReason;
 
     if ~isempty(grfStreamRows)
 
-        exactGRFRows = grfStreamRows( ...
-            strcmpi(streamDetail.StreamName(grfStreamRows), cfg.grf.streamName));
+        exactGRFRows = ...
+            grfStreamRows( ...
+                strcmpi( ...
+                    streamDetail.StreamName(grfStreamRows), ...
+                    cfg.grf.streamName));
 
         if ~isempty(exactGRFRows)
-            selectedGRFRow = exactGRFRows(1);
+
+            selectedGRFRow = ...
+                exactGRFRows(1);
+
         else
-            selectedGRFRow = grfStreamRows(1);
+
+            selectedGRFRow = ...
+                grfStreamRows(1);
+
         end
 
         selectedGRFStreamIndex = ...
@@ -400,175 +631,301 @@ for k = 1:numel(eegRows)
             string(streamDetail.ChannelCount(selectedGRFRow));
 
         thisGRFDurationSec = ...
-            to_scalar_double(streamDetail.DurationSec(selectedGRFRow));
+            to_scalar_double( ...
+                streamDetail.DurationSec(selectedGRFRow));
 
         thisGRFEffectiveSrate = ...
-            to_scalar_double(streamDetail.EffectiveSrate(selectedGRFRow));
+            to_scalar_double( ...
+                streamDetail.EffectiveSrate(selectedGRFRow));
 
         thisGRFMaxDtSec = ...
-            to_scalar_double(streamDetail.MaxDtSec(selectedGRFRow));
+            to_scalar_double( ...
+                streamDetail.MaxDtSec(selectedGRFRow));
 
         thisGRFNDataSamples = ...
-            to_scalar_double(streamDetail.NDataSamples(selectedGRFRow));
+            to_scalar_double( ...
+                streamDetail.NDataSamples(selectedGRFRow));
 
         thisGRFNTimeStamps = ...
-            to_scalar_double(streamDetail.NTimeStamps(selectedGRFRow));
+            to_scalar_double( ...
+                streamDetail.NTimeStamps(selectedGRFRow));
 
-        % Use stream-level status when exactly one GRF candidate is present.
-        % Multiple candidates retain the file-level multiple-stream status.
         if numel(grfStreamRows) == 1
+
             thisGRFQualityStatus = ...
-                string(streamDetail.GRFQualityStatus(selectedGRFRow));
+                string( ...
+                    streamDetail.GRFQualityStatus(selectedGRFRow));
 
             thisGRFQualityReason = ...
-                string(streamDetail.GRFQualityReason(selectedGRFRow));
+                string( ...
+                    streamDetail.GRFQualityReason(selectedGRFRow));
+
         end
+
     end
 
     if strlength(thisGRFQualityStatus) == 0
 
         if thisHasUsableGRF
+
             thisGRFQualityStatus = "OK";
-            thisGRFQualityReason = "usable_GRF_stream_found";
+            thisGRFQualityReason = ...
+                "usable_GRF_stream_found";
 
         elseif thisHasGRFStream
-            thisGRFQualityStatus = "BAD_unknown";
-            thisGRFQualityReason = "GRF_stream_failed_for_an_unknown_reason";
+
+            thisGRFQualityStatus = ...
+                "BAD_unknown";
+
+            thisGRFQualityReason = ...
+                "GRF_stream_failed_for_an_unknown_reason";
 
         else
-            thisGRFQualityStatus = "NO_GRF";
-            thisGRFQualityReason = "no_GRF_candidate_stream_found";
+
+            thisGRFQualityStatus = ...
+                "NO_GRF";
+
+            thisGRFQualityReason = ...
+                "no_GRF_candidate_stream_found";
+
         end
+
     end
 
-    %% Decide whether to import by default
+    % File-level flags
 
-    % Keep backup XDF files visible in the table but disable them by default.
-    % Match only filename suffixes such as _old.xdf, _old1.xdf, _old2.xdf.
-    isOldFile = ~isempty(regexpi( ...
-        char(thisFileName), ...
-        char(cfg.import.oldFileRegex), ...
-        'once'));
+    runNumberValue = ...
+        str2double(runLabel);
 
-    runNumberValue = str2double(runLabel);
+    isAllowedRun = ...
+        isfinite(runNumberValue) && ...
+        ismember( ...
+            runNumberValue, ...
+            cfg.import.allowedRunNumbers);
 
-    isAllowedRun = isfinite(runNumberValue) && ...
-        ismember(runNumberValue, cfg.import.allowedRunNumbers);
+    isNonWalking = ...
+        any( ...
+            contains( ...
+                lower(resolvedXdfPath), ...
+                lower(cfg.import.nonWalkingPathWords)));
 
-    isNonWalking = any(contains( ...
-        lower(resolvedXdfPath), ...
-        lower(cfg.import.nonWalkingPathWords)));
+    % Structural gait-analysis candidate gate
 
-    if isOldFile
+    if ~isAllowedRun
 
-        doImportFlag = 0;
-
-        if strlength(thisQualityStatus) > 0
-            extraTag = "old_file_default_skip;" + thisQualityStatus;
-        else
-            extraTag = "old_file_default_skip";
-        end
-
-    elseif ~isAllowedRun
-
-        doImportFlag = 0;
-
-        if strlength(thisQualityStatus) > 0
-            extraTag = "run_not_001_or_002_default_skip;" + ...
-                thisQualityStatus;
-        else
-            extraTag = "run_not_001_or_002_default_skip";
-        end
-
-    elseif isNonWalking
-
-        doImportFlag = 0;
-        extraTag = "non_walking_or_calibration_default_skip";
+        structuralCandidate = 0;
+        gateReason = ...
+            "run_not_allowed_default_skip";
 
     elseif eegStream ~= cfg.eeg.streamName
 
-        doImportFlag = 0;
-        extraTag = "unexpected_eeg_stream_default_skip;" + thisQualityStatus;
+        structuralCandidate = 0;
+        gateReason = ...
+            "unexpected_eeg_stream_default_skip;" + ...
+            thisQualityStatus;
 
     elseif ~thisHasUsableEEG
 
-        doImportFlag = 0;
-        extraTag = "failed_eeg_gate;" + thisQualityStatus;
+        structuralCandidate = 0;
+        gateReason = ...
+            "failed_eeg_gate;" + ...
+            thisQualityStatus;
+
+    elseif isNonWalking
+
+        structuralCandidate = 0;
+        gateReason = ...
+            "non_walking_or_calibration_default_skip";
 
     elseif ~thisHasGRFStream
 
-        doImportFlag = 0;
-        extraTag = "failed_grf_gate;NO_GRF";
+        structuralCandidate = 0;
+        gateReason = ...
+            "failed_grf_gate;NO_GRF";
 
     elseif ~thisHasUsableGRF
 
-        doImportFlag = 0;
-        extraTag = "failed_grf_gate;" + thisGRFQualityStatus;
+        structuralCandidate = 0;
+        gateReason = ...
+            "failed_grf_gate;" + ...
+            thisGRFQualityStatus;
 
     else
 
-        doImportFlag = 1;
+        structuralCandidate = 1;
+        gateReason = ...
+            "step03_structural_candidate";
 
-        if startsWith(thisQualityStatus, "WARNING")
-            extraTag = thisQualityStatus;
-        else
-            extraTag = "";
-        end
     end
 
-    %% Append one row
+    doBIDSImportFlag = ...
+        structuralCandidate;
 
-    DoImport(end+1, 1)            = doImportFlag;
-    XdfPath(end+1, 1)             = resolvedXdfPath;
-    FileName(end+1, 1)            = thisFileName;
-    RawSubjectFolder(end+1, 1)    = rawSubject;
-    RawDayFolder(end+1, 1)        = rawDay;
-    RawSessionFolder(end+1, 1)    = rawSession;
-    BidsSubject(end+1, 1)         = bidsSubject;
-    BidsSession(end+1, 1)         = sessionLabel;
-    Task(end+1, 1)                = taskLabel;
-    RunNumber(end+1, 1)           = runLabel;
-    ExtraTag(end+1, 1)            = extraTag;
-    EEGStreamName(end+1, 1)       = eegStream;
-    NominalSrate(end+1, 1)        = srate;
-    ChannelCount(end+1, 1)        = nChan;
+    doGaitAnalysisFlag = ...
+        structuralCandidate;
 
-    HasUsableEEG(end+1, 1)        = thisHasUsableEEG;
-    SelectedStreamIndex(end+1, 1) = selectedStreamIndex;
-    EEGQualityStatus(end+1, 1)    = thisQualityStatus;
-    EEGQualityReason(end+1, 1)    = thisQualityReason;
-    DurationSec(end+1, 1)         = thisDurationSec;
-    EffectiveSrate(end+1, 1)      = thisEffectiveSrate;
-    MaxDtSec(end+1, 1)            = thisMaxDtSec;
-    NDataSamples(end+1, 1)        = thisNDataSamples;
-    NTimeStamps(end+1, 1)         = thisNTimeStamps;
+    bidsImportReason = ...
+        gateReason;
 
-    HasGRFStream(end+1, 1)        = thisHasGRFStream;
-    HasUsableGRF(end+1, 1)        = thisHasUsableGRF;
-    SelectedGRFStreamIndex(end+1, 1) = selectedGRFStreamIndex;
-    GRFStreamName(end+1, 1)       = grfStream;
-    GRFNominalSrate(end+1, 1)     = grfNominalSrate;
-    GRFChannelCount(end+1, 1)     = grfChannelCount;
-    GRFQualityStatus(end+1, 1)    = thisGRFQualityStatus;
-    GRFQualityReason(end+1, 1)    = thisGRFQualityReason;
-    GRFDurationSec(end+1, 1)      = thisGRFDurationSec;
-    GRFEffectiveSrate(end+1, 1)   = thisGRFEffectiveSrate;
-    GRFMaxDtSec(end+1, 1)         = thisGRFMaxDtSec;
-    GRFNDataSamples(end+1, 1)     = thisGRFNDataSamples;
-    GRFNTimeStamps(end+1, 1)      = thisGRFNTimeStamps;
+    gaitAnalysisReason = ...
+        gateReason;
+
+    if structuralCandidate == 1
+        extraTag = "";
+    else
+        extraTag = gateReason;
+    end
+
+    % Append row
+
+    DoBIDSImport(end+1, 1) = ...
+        doBIDSImportFlag;
+
+    DoGaitAnalysis(end+1, 1) = ...
+        doGaitAnalysisFlag;
+
+    DoImport(end+1, 1) = ...
+        doGaitAnalysisFlag;
+
+    BIDSImportReason(end+1, 1) = ...
+        bidsImportReason;
+
+    GaitAnalysisReason(end+1, 1) = ...
+        gaitAnalysisReason;
+
+    XdfPath(end+1, 1) = ...
+        resolvedXdfPath;
+
+    FileName(end+1, 1) = ...
+        thisFileName;
+
+    RawSubjectFolder(end+1, 1) = ...
+        rawSubject;
+
+    RawDayFolder(end+1, 1) = ...
+        rawDay;
+
+    RawSessionFolder(end+1, 1) = ...
+        rawSession;
+
+    OriginalSubjectID(end+1, 1) = ...
+        originalSubjectID;
+
+    SubjectID(end+1, 1) = ...
+        subjectID;
+
+    BidsSubject(end+1, 1) = ...
+        bidsSubject;
+
+    BidsSubjectLabel(end+1, 1) = ...
+        bidsSubjectLabel;
+
+    BidsSession(end+1, 1) = ...
+        sessionLabel;
+
+    Task(end+1, 1) = ...
+        taskLabel;
+
+    RunNumber(end+1, 1) = ...
+        runLabel;
+
+    ExtraTag(end+1, 1) = ...
+        extraTag;
+
+    EEGStreamName(end+1, 1) = ...
+        eegStream;
+
+    NominalSrate(end+1, 1) = ...
+        srate;
+
+    ChannelCount(end+1, 1) = ...
+        nChan;
+
+    HasUsableEEG(end+1, 1) = ...
+        thisHasUsableEEG;
+
+    SelectedStreamIndex(end+1, 1) = ...
+        selectedStreamIndex;
+
+    EEGQualityStatus(end+1, 1) = ...
+        thisQualityStatus;
+
+    EEGQualityReason(end+1, 1) = ...
+        thisQualityReason;
+
+    DurationSec(end+1, 1) = ...
+        thisDurationSec;
+
+    EffectiveSrate(end+1, 1) = ...
+        thisEffectiveSrate;
+
+    MaxDtSec(end+1, 1) = ...
+        thisMaxDtSec;
+
+    NDataSamples(end+1, 1) = ...
+        thisNDataSamples;
+
+    NTimeStamps(end+1, 1) = ...
+        thisNTimeStamps;
+
+    HasGRFStream(end+1, 1) = ...
+        thisHasGRFStream;
+
+    HasUsableGRF(end+1, 1) = ...
+        thisHasUsableGRF;
+
+    SelectedGRFStreamIndex(end+1, 1) = ...
+        selectedGRFStreamIndex;
+
+    GRFStreamName(end+1, 1) = ...
+        grfStream;
+
+    GRFNominalSrate(end+1, 1) = ...
+        grfNominalSrate;
+
+    GRFChannelCount(end+1, 1) = ...
+        grfChannelCount;
+
+    GRFQualityStatus(end+1, 1) = ...
+        thisGRFQualityStatus;
+
+    GRFQualityReason(end+1, 1) = ...
+        thisGRFQualityReason;
+
+    GRFDurationSec(end+1, 1) = ...
+        thisGRFDurationSec;
+
+    GRFEffectiveSrate(end+1, 1) = ...
+        thisGRFEffectiveSrate;
+
+    GRFMaxDtSec(end+1, 1) = ...
+        thisGRFMaxDtSec;
+
+    GRFNDataSamples(end+1, 1) = ...
+        thisGRFNDataSamples;
+
+    GRFNTimeStamps(end+1, 1) = ...
+        thisGRFNTimeStamps;
 
 end
 
-%% Create and save import table
+% Create output table
 
 importTable = table( ...
+    DoBIDSImport, ...
+    DoGaitAnalysis, ...
     DoImport, ...
+    BIDSImportReason, ...
+    GaitAnalysisReason, ...
     XdfPath, ...
     FileName, ...
     RawSubjectFolder, ...
     RawDayFolder, ...
     RawSessionFolder, ...
+    OriginalSubjectID, ...
+    SubjectID, ...
     BidsSubject, ...
+    BidsSubjectLabel, ...
     BidsSession, ...
     Task, ...
     RunNumber, ...
@@ -599,81 +956,148 @@ importTable = table( ...
     GRFNDataSamples, ...
     GRFNTimeStamps);
 
-% Keep the QC-derived recommendation separate from the editable DoImport flag.
-importTable.RecommendedDoImport = importTable.DoImport;
+% Recommended gates
 
-% Preserve the user-editable DoImport decision when the source signature is unchanged.
-importTable = preserve_existing_columns(importTable, importTableFile);
+importTable.RecommendedDoBIDSImport = ...
+    importTable.DoBIDSImport;
 
-% Duplicate BIDS run keys are invalid when multiple matching rows are enabled.
-% Disabled backup rows may share the same key.
-importTable = disable_duplicate_bids_keys(importTable);
+importTable.RecommendedDoGaitAnalysis = ...
+    importTable.DoGaitAnalysis;
 
-writetable(importTable, importTableFile);
+importTable.RecommendedDoImport = ...
+    importTable.DoGaitAnalysis;
 
-%% Final report
+% Retain valid saved decisions
 
-fprintf('\n============================================================\n');
-fprintf('IMPORT TABLE CREATED\n');
-fprintf('============================================================\n');
+importTable = ...
+    preserve_existing_columns( ...
+        importTable, ...
+        importTableFile);
 
-fprintf('Saved to:\n%s\n', importTableFile);
+% Keep all structural candidate gate fields synchronized.
 
-fprintf('\nTotal real-EEG rows in import table: %d\n', height(importTable));
-fprintf('Rows with DoImport = 1: %d\n', sum(importTable.DoImport == 1));
-fprintf('Rows with DoImport = 0: %d\n', sum(importTable.DoImport == 0));
-fprintf('Rows with usable EEG: %d\n', sum(importTable.HasUsableEEG == 1));
-fprintf('Rows with usable GRF: %d\n', sum(importTable.HasUsableGRF == 1));
+importTable.DoBIDSImport = ...
+    importTable.DoGaitAnalysis;
 
-fprintf('Rows passing both stream gates: %d\n', ...
-    sum(importTable.HasUsableEEG == 1 & ...
-        importTable.HasUsableGRF == 1));
+importTable.DoImport = ...
+    importTable.DoGaitAnalysis;
 
-fprintf('XDF paths rebased to current rawDataFolder: %d\n', ...
+importTable.RecommendedDoBIDSImport = ...
+    importTable.RecommendedDoGaitAnalysis;
+
+importTable.RecommendedDoImport = ...
+    importTable.RecommendedDoGaitAnalysis;
+
+importTable.BIDSImportReason = ...
+    importTable.GaitAnalysisReason;
+
+% Duplicate BIDS-key protection
+
+importTable = ...
+    disable_duplicate_bids_keys(importTable);
+
+importTable.DoBIDSImport = ...
+    importTable.DoGaitAnalysis;
+
+importTable.DoImport = ...
+    importTable.DoGaitAnalysis;
+
+importTable.RecommendedDoBIDSImport = ...
+    importTable.RecommendedDoGaitAnalysis;
+
+importTable.RecommendedDoImport = ...
+    importTable.RecommendedDoGaitAnalysis;
+
+disabledRows = ...
+    importTable.DoBIDSImport ~= 1;
+
+provenanceColumns = { ...
+    'BidsExportStatus', ...
+    'BidsExportMessage', ...
+    'BidsEEGHeader', ...
+    'BidsSourceSignature', ...
+    'BidsRecordingSignature', ...
+    'BidsExportConfigSignature', ...
+    'BidsExportedAt', ...
+    'BidsEEGLABStatus', ...
+    'BidsEEGLABMessage', ...
+    'BidsEEGLABSet', ...
+    'BidsEEGLABSignature', ...
+    'BidsEEGLABConfigSignature', ...
+    'BidsEEGLABCreatedAt'};
+
+for iColumn = 1:numel(provenanceColumns)
+
+    columnName = provenanceColumns{iColumn};
+
+    if ismember(columnName, importTable.Properties.VariableNames)
+
+        importTable.(columnName) = ...
+            string(importTable.(columnName));
+
+        importTable.(columnName)(disabledRows) = "";
+    end
+end
+
+% Save
+
+writetable( ...
+    importTable, ...
+    importTableFile);
+
+% Report
+
+fprintf('\nImport table created.\n');
+
+fprintf( ...
+    'Saved to:\n%s\n', ...
+    importTableFile);
+
+fprintf( ...
+    '\nTotal real-EEG rows in import table: %d\n', ...
+    height(importTable));
+
+fprintf( ...
+    'Rows with DoBIDSImport = 1: %d\n', ...
+    sum(importTable.DoBIDSImport == 1));
+
+fprintf( ...
+    'Rows enabled as Step 03 gait candidates: %d\n', ...
+    sum(importTable.DoGaitAnalysis == 1));
+
+fprintf( ...
+    'XDF paths rebased to current rawDataFolder: %d\n', ...
     nRebasedXdfPaths);
 
-fprintf('Allowed XDF runs: %s\n', ...
-    strjoin(compose('run-%03d', cfg.import.allowedRunNumbers), ', '));
+% BIDS exclusions
 
-fprintf('\nDoImport = 0 reasons:\n');
+fprintf('\nDoBIDSImport = 0 reasons:\n');
 
-skipRows = importTable.DoImport == 0;
+bidsSkipRows = ...
+    importTable.DoBIDSImport == 0;
 
-if any(skipRows)
+if any(bidsSkipRows)
 
-    skipStatus = importTable.ExtraTag(skipRows);
-    uniqueStatus = unique(skipStatus, 'stable');
+    skipStatus = ...
+        importTable.BIDSImportReason(bidsSkipRows);
+
+    uniqueStatus = ...
+        unique(skipStatus, 'stable');
 
     for k = 1:numel(uniqueStatus)
-        thisStatus = uniqueStatus(k);
-        n = sum(skipStatus == thisStatus);
 
-        fprintf('  %-40s %d\n', thisStatus, n);
+        thisStatus = ...
+            uniqueStatus(k);
+
+        n = ...
+            sum(skipStatus == thisStatus);
+
+        fprintf( ...
+            '  %-50s %d\n', ...
+            thisStatus, ...
+            n);
+
     end
-
-    fprintf('\nSkipped XDF rows:\n');
-
-    disp(importTable(skipRows, { ...
-        'FileName', ...
-        'BidsSubject', ...
-        'BidsSession', ...
-        'RunNumber', ...
-        'ExtraTag', ...
-        'EEGQualityStatus', ...
-        'EEGQualityReason', ...
-        'HasGRFStream', ...
-        'HasUsableGRF', ...
-        'GRFQualityStatus', ...
-        'GRFQualityReason', ...
-        'DurationSec', ...
-        'EffectiveSrate', ...
-        'MaxDtSec', ...
-        'NDataSamples', ...
-        'NTimeStamps', ...
-        'GRFDurationSec', ...
-        'GRFEffectiveSrate', ...
-        'GRFNDataSamples', ...
-        'GRFNTimeStamps'}));
 
 else
 
@@ -681,65 +1105,335 @@ else
 
 end
 
-fprintf('\nPreview:\n');
-disp(importTable(1:min(10, height(importTable)), :));
+% Gait-analysis exclusions
 
-fprintf('\nDone.\n');
+fprintf('\nDoGaitAnalysis = 0 reasons:\n');
 
-%% Helper functions
+gaitSkipRows = ...
+    importTable.DoGaitAnalysis == 0;
+
+if any(gaitSkipRows)
+
+    skipStatus = ...
+        importTable.GaitAnalysisReason(gaitSkipRows);
+
+    uniqueStatus = ...
+        unique(skipStatus, 'stable');
+
+    for k = 1:numel(uniqueStatus)
+
+        thisStatus = ...
+            uniqueStatus(k);
+
+        n = ...
+            sum(skipStatus == thisStatus);
+
+        fprintf( ...
+            '  %-50s %d\n', ...
+            thisStatus, ...
+            n);
+
+    end
+
+else
+
+    fprintf('  None.\n');
+
+end
+
+end
+
+% LOCAL FUNCTIONS
 
 function check_required_columns(T, requiredColumns, tableName)
 
-    for i = 1:numel(requiredColumns)
+for i = 1:numel(requiredColumns)
 
-        if ~ismember(requiredColumns{i}, T.Properties.VariableNames)
+    if ~ismember( ...
+            requiredColumns{i}, ...
+            T.Properties.VariableNames)
 
-            error( ...
-                'Required column "%s" not found in %s.', ...
-                requiredColumns{i}, ...
-                tableName);
+        error( ...
+            'Required column "%s" not found in %s.', ...
+            requiredColumns{i}, ...
+            tableName);
 
+    end
+
+end
+
+end
+
+function T = disable_duplicate_bids_keys(T)
+
+T.DoBIDSImport = ...
+    to_numeric_column(T.DoBIDSImport);
+
+T.DoGaitAnalysis = ...
+    to_numeric_column(T.DoGaitAnalysis);
+
+T.DoImport = ...
+    to_numeric_column(T.DoImport);
+
+enabledRows = ...
+    find(T.DoBIDSImport == 1);
+
+if numel(enabledRows) < 2
+    return;
+end
+
+runText = ...
+    string(T.RunNumber(enabledRows));
+
+runText(ismissing(runText)) = "";
+
+keys = ...
+    string(T.BidsSubject(enabledRows)) + "|" + ...
+    string(T.BidsSession(enabledRows)) + "|" + ...
+    string(T.Task(enabledRows)) + "|" + ...
+    runText;
+
+uniqueKeys = ...
+    unique(keys, 'stable');
+
+duplicateGroups = ...
+    strings(0, 1);
+
+for iKey = 1:numel(uniqueKeys)
+
+    if sum(keys == uniqueKeys(iKey)) > 1
+
+        duplicateGroups(end+1, 1) = ...
+            uniqueKeys(iKey); %#ok<AGROW>
+
+    end
+
+end
+
+if isempty(duplicateGroups)
+    return;
+end
+
+warning( ...
+    ['Duplicate ENABLED BIDS subject/session/task/run keys found. ' ...
+     'The conflicting rows will be disabled.']);
+
+for k = 1:numel(duplicateGroups)
+
+    rows = ...
+        enabledRows( ...
+            keys == duplicateGroups(k));
+
+    T.DoBIDSImport(rows) = 0;
+    T.DoGaitAnalysis(rows) = 0;
+    T.DoImport(rows) = 0;
+
+    T.RecommendedDoBIDSImport(rows) = 0;
+    T.RecommendedDoGaitAnalysis(rows) = 0;
+    T.RecommendedDoImport(rows) = 0;
+
+    T.BIDSImportReason(rows) = ...
+        "duplicate_enabled_bids_key_default_skip";
+
+    T.GaitAnalysisReason(rows) = ...
+        "blocked_by_duplicate_bids_key";
+
+    T.ExtraTag(rows) = ...
+        "duplicate_enabled_bids_key_default_skip";
+
+    fprintf( ...
+        'Duplicate enabled BIDS key: %s\n', ...
+        duplicateGroups(k));
+
+end
+
+end
+
+function newT = preserve_existing_columns(newT, tableFile)
+
+if ~exist(tableFile, 'file')
+    return;
+end
+
+try
+
+    opts = detectImportOptions( ...
+        tableFile, ...
+        'FileType', 'text', ...
+        'Delimiter', ',', ...
+        'VariableNamingRule', 'preserve');
+
+    oldT = readtable(tableFile, opts);
+
+catch ME
+
+    warning( ...
+        ['Could not read the saved import table. Manual decisions ' ...
+         'were not retained: %s'], ...
+        ME.message);
+
+    return;
+
+end
+
+if ~ismember('XdfPath', oldT.Properties.VariableNames)
+    return;
+end
+
+oldT.XdfPath = ...
+    string(oldT.XdfPath);
+
+newT.XdfPath = ...
+    string(newT.XdfPath);
+
+hasOldBIDSGate = ...
+    ismember( ...
+        'DoBIDSImport', ...
+        oldT.Properties.VariableNames);
+
+hasOldGaitGate = ...
+    ismember( ...
+        'DoGaitAnalysis', ...
+        oldT.Properties.VariableNames);
+
+hasOldLegacyGate = ...
+    ismember( ...
+        'DoImport', ...
+        oldT.Properties.VariableNames);
+
+if hasOldBIDSGate
+    oldT.DoBIDSImport = ...
+        to_numeric_column(oldT.DoBIDSImport);
+end
+
+if hasOldGaitGate
+    oldT.DoGaitAnalysis = ...
+        to_numeric_column(oldT.DoGaitAnalysis);
+end
+
+if hasOldLegacyGate
+    oldT.DoImport = ...
+        to_numeric_column(oldT.DoImport);
+end
+
+provenanceColumns = { ...
+    'BidsExportStatus', ...
+    'BidsExportMessage', ...
+    'BidsEEGHeader', ...
+    'BidsSourceSignature', ...
+    'BidsRecordingSignature', ...
+    'BidsExportConfigSignature', ...
+    'BidsExportedAt', ...
+    'BidsEEGLABStatus', ...
+    'BidsEEGLABMessage', ...
+    'BidsEEGLABSet', ...
+    'BidsEEGLABSignature', ...
+    'BidsEEGLABConfigSignature', ...
+    'BidsEEGLABCreatedAt'};
+
+for iColumn = 1:numel(provenanceColumns)
+
+    columnName = provenanceColumns{iColumn};
+
+    if ismember(columnName, oldT.Properties.VariableNames)
+        oldT.(columnName) = string(oldT.(columnName));
+        newT.(columnName) = strings(height(newT), 1);
+    end
+
+end
+
+for r = 1:height(newT)
+
+    oldRow = ...
+        find( ...
+            oldT.XdfPath == newT.XdfPath(r), ...
+            1, ...
+            'first');
+
+    if isempty(oldRow)
+        continue;
+    end
+
+    if hasOldBIDSGate && newT.RecommendedDoBIDSImport(r) == 1 && ...
+            previous_recommendation_local(oldT, oldRow, "BIDS") == 1
+
+        newT.DoBIDSImport(r) = ...
+            oldT.DoBIDSImport(oldRow);
+
+    end
+
+    if newT.RecommendedDoGaitAnalysis(r) == 1 && ...
+            previous_recommendation_local(oldT, oldRow, "Gait") == 1
+
+        if hasOldGaitGate
+
+            newT.DoGaitAnalysis(r) = ...
+                oldT.DoGaitAnalysis(oldRow);
+
+        elseif hasOldLegacyGate
+
+            % DoImport supplies the gait gate when DoGaitAnalysis is absent.
+            newT.DoGaitAnalysis(r) = ...
+                oldT.DoImport(oldRow);
+
+        end
+
+    end
+
+    for iColumn = 1:numel(provenanceColumns)
+
+        columnName = provenanceColumns{iColumn};
+
+        if ismember(columnName, oldT.Properties.VariableNames)
+            newT.(columnName)(r) = ...
+                string(oldT.(columnName)(oldRow));
         end
 
     end
 
 end
 
-function y = to_numeric_column(x)
+newT.DoImport = ...
+    newT.DoGaitAnalysis;
 
-    if isnumeric(x)
+end
 
-        y = double(x);
-
-    elseif islogical(x)
-
-        y = double(x);
-
-    else
-
-        y = str2double(string(x));
-
+function value = previous_recommendation_local(T, row, stage)
+name = "RecommendedDo" + stage;
+if stage == "BIDS", name = name + "Import"; else, name = name + "Analysis"; end
+if ismember(name, string(T.Properties.VariableNames))
+    values = to_numeric_column(T.(char(name)));
+    value = values(row);
+else
+    % Legacy tables: a QC-disabled row is eligible for a fresh decision.
+    value = 1;
+    if ismember('HasUsableEEG', T.Properties.VariableNames)
+        values = to_numeric_column(T.HasUsableEEG);
+        value = values(row);
     end
-
+    if stage == "Gait" && ismember('HasUsableGRF', T.Properties.VariableNames)
+        values = to_numeric_column(T.HasUsableGRF);
+        value = value == 1 && values(row) == 1;
+    end
+end
 end
 
 function y = to_logical_column(x)
 
-    if islogical(x)
+if islogical(x)
 
-        y = x;
-        return;
+    y = x;
 
-    end
+elseif isnumeric(x)
 
-    if isnumeric(x)
+    y = x ~= 0;
 
-        y = x ~= 0;
-        return;
+else
 
-    end
-
-    x = lower(strtrim(string(x)));
+    x = ...
+        lower( ...
+            strtrim( ...
+                string(x)));
 
     y = ...
         x == "true" | ...
@@ -748,465 +1442,34 @@ function y = to_logical_column(x)
 
 end
 
+end
+
+function y = to_numeric_column(x)
+
+if isnumeric(x)
+
+    y = double(x);
+
+elseif islogical(x)
+
+    y = double(x);
+
+else
+
+    y = ...
+        str2double( ...
+            string(x));
+
+end
+
+end
+
 function y = to_scalar_double(x)
 
-    if isnumeric(x)
+y = to_numeric_column(x);
 
-        y = double(x);
-
-    elseif islogical(x)
-
-        y = double(x);
-
-    else
-
-        y = str2double(string(x));
-
-    end
-
-    if numel(y) > 1
-        y = y(1);
-    end
-
+if numel(y) > 1
+    y = y(1);
 end
-
-function T = disable_duplicate_bids_keys(T)
-
-    % Only enabled rows can overwrite one another during XDF -> BIDS import.
-    % A disabled backup XDF may share the same parsed BIDS key.
-    T.DoImport = to_numeric_column(T.DoImport);
-
-    if ismember('RecommendedDoImport', T.Properties.VariableNames)
-        T.RecommendedDoImport = ...
-            to_numeric_column(T.RecommendedDoImport);
-    end
-
-    enabledRows = find(T.DoImport == 1);
-
-    if numel(enabledRows) < 2
-        return;
-    end
-
-    runText = string(T.RunNumber(enabledRows));
-    runText(ismissing(runText)) = "";
-
-    keys = ...
-        string(T.BidsSubject(enabledRows)) + "|" + ...
-        string(T.BidsSession(enabledRows)) + "|" + ...
-        string(T.Task(enabledRows)) + "|" + ...
-        runText;
-
-    [uniqueKeys, ~, groupIndex] = unique(keys, 'stable');
-
-    counts = accumarray(groupIndex, 1);
-    duplicateGroups = find(counts > 1);
-
-    if isempty(duplicateGroups)
-        return;
-    end
-
-    warning([ ...
-        'Duplicate ENABLED BIDS subject/session/task/run keys found. ' ...
-        'Only the conflicting enabled rows were set to DoImport = 0.']);
-
-    for k = 1:numel(duplicateGroups)
-
-        rows = ...
-            enabledRows( ...
-                groupIndex == duplicateGroups(k));
-
-        T.DoImport(rows) = 0;
-
-        if ismember( ...
-                'RecommendedDoImport', ...
-                T.Properties.VariableNames)
-
-            T.RecommendedDoImport(rows) = 0;
-
-        end
-
-        T.EEGQualityStatus(rows) = ...
-            "BAD_duplicate_enabled_bids_key";
-
-        T.EEGQualityReason(rows) = ...
-            "multiple_enabled_XDF_files_map_to_the_same_BIDS_subject_session_task_run";
-
-        T.ExtraTag(rows) = ...
-            "duplicate_enabled_bids_key_default_skip";
-
-        fprintf( ...
-            'Duplicate enabled key: %s\n', ...
-            uniqueKeys(duplicateGroups(k)));
-
-        disp(T(rows, { ...
-            'FileName', ...
-            'XdfPath', ...
-            'BidsSubject', ...
-            'BidsSession', ...
-            'Task', ...
-            'RunNumber', ...
-            'DoImport'}));
-
-    end
-
-end
-
-function newT = preserve_existing_columns(newT, tableFile)
-
-    if ~exist(tableFile, 'file')
-        return;
-    end
-
-    try
-
-        opts = detectImportOptions( ...
-            tableFile, ...
-            'FileType', 'text', ...
-            'Delimiter', ',', ...
-            'VariableNamingRule', 'preserve');
-
-        opts = setvartype( ...
-            opts, ...
-            opts.VariableNames, ...
-            'string');
-
-        oldT = readtable(tableFile, opts);
-
-    catch ME
-
-        warning( ...
-            'Could not read the previous import table. Existing manual columns were not preserved: %s', ...
-            ME.message);
-
-        return;
-
-    end
-
-    if ~ismember('XdfPath', oldT.Properties.VariableNames)
-
-        warning( ...
-            'Previous import table has no XdfPath column. Existing columns were not preserved.');
-
-        return;
-
-    end
-
-    oldT.XdfPath = string(oldT.XdfPath);
-    newT.XdfPath = string(newT.XdfPath);
-
-    columnsToPreserve = {'DoImport'};
-
-    if ismember('DoImport', oldT.Properties.VariableNames)
-        oldT.DoImport = to_numeric_column(oldT.DoImport);
-    end
-
-    for c = 1:numel(columnsToPreserve)
-
-        name = columnsToPreserve{c};
-
-        if ~ismember(name, oldT.Properties.VariableNames)
-            continue;
-        end
-
-        if ~ismember(name, newT.Properties.VariableNames)
-
-            newT.(name) = ...
-                make_missing_column_like( ...
-                    oldT.(name), ...
-                    height(newT));
-
-        end
-
-    end
-
-    preservedRows = 0;
-    invalidatedRows = 0;
-
-    for r = 1:height(newT)
-
-        oldRow = find( ...
-            oldT.XdfPath == newT.XdfPath(r), ...
-            1, ...
-            'first');
-
-        % Use the raw-folder and filename identity when absolute paths differ.
-        if isempty(oldRow)
-
-            portableKeyFields = { ...
-                'FileName', ...
-                'RawSubjectFolder', ...
-                'RawDayFolder', ...
-                'RawSessionFolder'};
-
-            if all(ismember( ...
-                    portableKeyFields, ...
-                    oldT.Properties.VariableNames)) && ...
-                    all(ismember( ...
-                        portableKeyFields, ...
-                        newT.Properties.VariableNames))
-
-                candidateOldRows = true(height(oldT), 1);
-
-                for keyIndex = 1:numel(portableKeyFields)
-
-                    keyName = portableKeyFields{keyIndex};
-
-                    candidateOldRows = ...
-                        candidateOldRows & ...
-                        string(oldT.(keyName)) == ...
-                        string(newT.(keyName)(r));
-
-                end
-
-                matchingOldRows = find(candidateOldRows);
-
-                if numel(matchingOldRows) == 1
-                    oldRow = matchingOldRows;
-                end
-
-            end
-
-        end
-
-        if isempty(oldRow)
-            continue;
-        end
-
-        if source_signature_matches( ...
-                oldT, ...
-                oldRow, ...
-                newT, ...
-                r)
-
-            for c = 1:numel(columnsToPreserve)
-
-                name = columnsToPreserve{c};
-
-                if ismember(name, oldT.Properties.VariableNames)
-
-                    if strcmp(name, 'DoImport')
-
-                        % A QC-rejected row cannot be enabled manually.
-                        if newT.RecommendedDoImport(r) ~= 1
-                            continue;
-                        end
-
-                        % Duplicate-disable states are not preserved as manual
-                        % DoImport decisions.
-                        if was_auto_disabled_duplicate(oldT, oldRow)
-                            continue;
-                        end
-
-                    end
-
-                    newT.(name)(r,:) = ...
-                        oldT.(name)(oldRow,:);
-
-                end
-
-            end
-
-            preservedRows = preservedRows + 1;
-
-        else
-
-            invalidatedRows = invalidatedRows + 1;
-
-        end
-
-    end
-
-    fprintf( ...
-        'Preserved DoImport for %d unchanged XDF rows.\n', ...
-        preservedRows);
-
-    fprintf( ...
-        'Did not preserve DoImport for %d changed XDF rows.\n', ...
-        invalidatedRows);
-
-end
-
-function tf = was_auto_disabled_duplicate(T, row)
-
-    tf = false;
-
-    if ismember('ExtraTag', T.Properties.VariableNames)
-
-        tag = string(T.ExtraTag(row));
-        tag(ismissing(tag)) = "";
-
-        if contains( ...
-                tag, ...
-                "duplicate_bids_key_default_skip") || ...
-                contains( ...
-                    tag, ...
-                    "duplicate_enabled_bids_key_default_skip")
-
-            tf = true;
-            return;
-
-        end
-
-    end
-
-    if ismember('EEGQualityStatus', T.Properties.VariableNames)
-
-        status = string(T.EEGQualityStatus(row));
-        status(ismissing(status)) = "";
-
-        if status == "BAD_duplicate_bids_key" || ...
-                status == "BAD_duplicate_enabled_bids_key"
-
-            tf = true;
-
-        end
-
-    end
-
-end
-
-function tf = source_signature_matches( ...
-        oldT, ...
-        oldRow, ...
-        newT, ...
-        newRow)
-
-    tf = true;
-
-    % Include both EEG and GRF source signatures. A missing or replaced GRF
-    % stream invalidates a manual DoImport decision even when the EEG metrics match.
-    fields = { ...
-        'BidsSubject', ...
-        'BidsSession', ...
-        'Task', ...
-        'RunNumber', ...
-        'NDataSamples', ...
-        'NTimeStamps', ...
-        'DurationSec', ...
-        'EffectiveSrate', ...
-        'HasGRFStream', ...
-        'HasUsableGRF', ...
-        'GRFQualityStatus', ...
-        'GRFNDataSamples', ...
-        'GRFNTimeStamps', ...
-        'GRFDurationSec', ...
-        'GRFEffectiveSrate'};
-
-    for i = 1:numel(fields)
-
-        name = fields{i};
-
-        if ~ismember( ...
-                name, ...
-                oldT.Properties.VariableNames) || ...
-                ~ismember( ...
-                    name, ...
-                    newT.Properties.VariableNames)
-
-            tf = false;
-            return;
-
-        end
-
-        a = string(oldT.(name)(oldRow));
-        b = string(newT.(name)(newRow));
-
-        if strcmp(name, 'RunNumber')
-
-            % Compare RunNumber numerically so equivalent formatting such as
-            % 1/2 and 001/002 does not invalidate otherwise unchanged rows.
-            av = str2double(a);
-            bv = str2double(b);
-
-            if isfinite(av) && isfinite(bv)
-
-                if av ~= bv
-                    tf = false;
-                    return;
-                end
-
-            elseif ~isequaln(a, b)
-
-                tf = false;
-                return;
-
-            end
-
-        elseif ismember(name, { ...
-                'DurationSec', ...
-                'EffectiveSrate', ...
-                'GRFDurationSec', ...
-                'GRFEffectiveSrate'})
-
-            av = str2double(a);
-            bv = str2double(b);
-
-            if ~( ...
-                    isfinite(av) && ...
-                    isfinite(bv) && ...
-                    abs(av - bv) <= 1e-6)
-
-                tf = false;
-                return;
-
-            end
-
-        elseif ~isequaln(a, b)
-
-            tf = false;
-            return;
-
-        end
-
-    end
-
-end
-
-function out = make_missing_column_like(example, nRows)
-
-    if isstring(example)
-
-        out = strings( ...
-            nRows, ...
-            size(example, 2));
-
-    elseif islogical(example)
-
-        out = false( ...
-            nRows, ...
-            size(example, 2));
-
-    elseif isnumeric(example)
-
-        out = nan( ...
-            nRows, ...
-            size(example, 2));
-
-    elseif isdatetime(example)
-
-        out = NaT( ...
-            nRows, ...
-            size(example, 2));
-
-    elseif iscell(example)
-
-        out = cell( ...
-            nRows, ...
-            size(example, 2));
-
-    elseif iscategorical(example)
-
-        out = repmat( ...
-            categorical(missing), ...
-            nRows, ...
-            size(example, 2));
-
-    else
-
-        out = strings( ...
-            nRows, ...
-            size(example, 2));
-
-    end
 
 end

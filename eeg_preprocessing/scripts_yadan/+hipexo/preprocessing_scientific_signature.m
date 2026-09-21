@@ -2,6 +2,7 @@ function signature = preprocessing_scientific_signature(bemobil_config)
 % GOAL
 %   Create a provenance signature from only settings that can change the
 %   numerical/basic EEG preprocessing result.
+%
 % METHOD
 %   Exclude force/skip switches, QC thresholds, workbook settings, output
 %   paths/filenames, AMICA/DIPFIT/ICLabel settings, and later analysis
@@ -9,8 +10,8 @@ function signature = preprocessing_scientific_signature(bemobil_config)
 
 S = struct();
 
-S.signature_version = ...
-    "HipExo_preprocessing_scientific_config_v1";
+S.preprocessingRandomSeed = ...
+    bemobil_config.preprocessingRandomSeed;
 
 S.channels_to_remove = bemobil_config.channels_to_remove;
 S.eog_channels = bemobil_config.eog_channels;

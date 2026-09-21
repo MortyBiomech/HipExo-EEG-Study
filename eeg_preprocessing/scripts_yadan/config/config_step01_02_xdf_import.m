@@ -2,6 +2,7 @@ function cfg = config_step01_02_xdf_import()
 % GOAL
 %   Define the parameters used to scan XDF streams and build the run-level
 %   EEG/GRF import-control table.
+%
 % METHOD
 %   Keep stream identity, structural QC thresholds, and default import gates
 %   in one place so these rules are not duplicated across the two scripts.
@@ -11,14 +12,12 @@ function cfg = config_step01_02_xdf_import()
 cfg.eeg.streamName = "LiveAmpSN-102108-1139";
 cfg.eeg.nominalSrateHz = 500;
 cfg.eeg.minimumChannelCount = 10;
-cfg.eeg.minimumDurationSec = 120;
-
 cfg.eeg.absoluteSrateToleranceHz = 2;
 cfg.eeg.relativeSrateTolerance = 0.004;
 
 cfg.grf.streamName = "GRF";
 cfg.grf.streamType = "Force";
-cfg.grf.expectedChannelCount = 8;
+cfg.grf.allowedChannelCounts = [8 9];
 cfg.grf.minimumDurationSec = 120;
 
 % Absolute ceiling for timestamp discontinuities.
@@ -34,7 +33,7 @@ cfg.scan.saveEveryNFiles = 5;
 
 cfg.import.allowedRunNumbers = [1 2];
 
-% Match only XDF filename suffixes such as:
+% XDF filename suffixes matched here are omitted from the import table:
 %   _old.xdf
 %   _old1.xdf
 %   _old2.xdf

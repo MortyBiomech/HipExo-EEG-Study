@@ -1,18 +1,28 @@
 % GOAL
-%   Build a continuous subject-level EEGLAB STUDY for manual ROI
-%   determination using the ICs marked Yes in the current review workbook.
+%   Build the continuous Yes-only EEGLAB STUDY used to determine / re-check
+%   fixed ROI seed locations from the manually accepted ICs.
+%
+% ROLE IN THE PIPELINE
+%   Run this ROI-determination branch after Step 09 when fixed ROI locations
+%   need to be established or reviewed. It is intentionally separate from
+%   the Step 01-14 numbered chain because it does NOT replace the final
+%   run-separated RHS STUDY created in Step 11.
+%
 % INPUT
 %   output_data/manual_IC_selection_final.xlsx
 %   subject_level_EEG_table.csv
 %   Step 08 ICA-QC-approved preprocessed_and_ICA datasets.
+%
 % APPROACH
 %   1. Read the current manual IC decisions.
 %   2. Resolve one continuous preprocessed_and_ICA dataset per subject.
 %   3. Verify ICA QC, AMICA provenance, and selected IC indices.
 %   4. Build a STUDY whose datasetinfo.comps contains each subject's Yes ICs.
+%
 % OUTPUT
 %   output_data/ROI_determination/HipExo_manual_IC_Yes_only.study
 %   output_data/ROI_determination/ROI_determination_dataset_manifest.csv
+%
 % USED BY
 %   Manual ROI determination in EEGLAB.
 
@@ -114,7 +124,7 @@ for d = 1:nDatasets
         EEGinfo, ...
         spec.subject, ...
         spec.yesICs, ...
-        spec.amicaInputSignature);
+        spec.amicaInputSignature, spec.prefinalSignature, spec.reviewIdentity);
 
     commands{d} = { ...
         'index', d, ...
@@ -247,6 +257,8 @@ function subjectSpecs = load_manual_subject_specs_local( ...
     sessionColumn = find(strcmpi(headers, 'Session'), 1, 'first');
     datasetColumn = find(strcmpi(headers, 'Dataset/File'), 1, 'first');
     icColumn = find(strcmpi(headers, 'IC'), 1, 'first');
+    identityColumn = find(strcmpi(headers, 'ICAIdentity'), 1, 'first');
+    assert(~isempty(identityColumn), 'Run Step09 to bind manual decisions to the current ICA identity.');
     decisionColumn = find(strcmpi( ...
         headers, 'ManualFinalDecision'), 1, 'first');
 
@@ -270,6 +282,7 @@ function subjectSpecs = load_manual_subject_specs_local( ...
     datasetFile = normalize_text_local(data(:, datasetColumn));
     ic = normalize_numeric_local(data(:, icColumn));
     decision = normalize_text_local(data(:, decisionColumn));
+    identity = normalize_text_local(data(:, identityColumn));
 
     validRows = strlength(subject) > 0 & ...
         strlength(session) > 0 & ...
@@ -281,6 +294,7 @@ function subjectSpecs = load_manual_subject_specs_local( ...
     datasetFile = datasetFile(validRows);
     ic = ic(validRows);
     decision = decision(validRows);
+    identity = identity(validRows);
 
     if any(ic < 1 | ic ~= round(ic))
         error('The manual IC review sheet contains an invalid IC index.');
@@ -344,7 +358,7 @@ function subjectSpecs = load_manual_subject_specs_local( ...
         'session', "", ...
         'yesICs', [], ...
         'sourceSet', "", ...
-        'amicaInputSignature', ""), ...
+        'amicaInputSignature', "", 'prefinalSignature', "", 'reviewIdentity', ""), ...
         numel(uniqueKeys), 1);
 
     keep = false(numel(uniqueKeys), 1);
@@ -389,6 +403,13 @@ function subjectSpecs = load_manual_subject_specs_local( ...
             error('preprocessed_and_ICA dataset not found:\n%s', sourceSet);
         end
 
+        selectedIdentities = unique(identity(rows & decisionLower == "yes"));
+        assert(numel(selectedIdentities) == 1 && strlength(selectedIdentities) > 0, ...
+            'Yes decisions must have one current ICA identity for %s.', subject(row0));
+        specs(g).reviewIdentity = selectedIdentities;
+        if ismember('AMICAPrefinalSignature', sourceMap.Properties.VariableNames)
+            specs(g).prefinalSignature = string(sourceMap.AMICAPrefinalSignature(mapRow));
+        end
         specs(g).subject = subject(row0);
         specs(g).session = session(row0);
         specs(g).yesICs = yesICs;
@@ -411,8 +432,7 @@ function subjectSpecs = load_manual_subject_specs_local( ...
     end
 end
 
-
-function verify_source_local(EEG, expectedSubject, yesICs, expectedSignature)
+function verify_source_local(EEG, expectedSubject, yesICs, expectedSignature, prefinalSignature, reviewIdentity)
 
     if EEG.trials ~= 1
         error('ROI determination requires continuous datasets.');
@@ -437,11 +457,16 @@ function verify_source_local(EEG, expectedSubject, yesICs, expectedSignature)
         error('EEG.etc.amica_input_signature is missing.');
     end
 
-    if string(EEG.etc.amica_input_signature) ~= string(expectedSignature)
+    assert(hipexo.ica_identity_signature(EEG) == string(reviewIdentity), ...
+        'Manual Yes decisions refer to a different ICA decomposition for %s. Run Step09 and review it.', expectedSubject);
+    prefinalMatches = strlength(prefinalSignature) > 0 && ...
+        isfield(EEG.etc, 'amica_stage_signatures') && ...
+        isfield(EEG.etc.amica_stage_signatures, 'prefinal') && ...
+        string(EEG.etc.amica_stage_signatures.prefinal) == prefinalSignature;
+    if ~prefinalMatches && string(EEG.etc.amica_input_signature) ~= string(expectedSignature)
         error('AMICA provenance mismatch for %s.', expectedSubject);
     end
 end
-
 
 function x = normalize_text_local(x)
 
@@ -473,7 +498,6 @@ function x = normalize_text_local(x)
 
     x(blankLike) = "";
 end
-
 
 function x = normalize_numeric_local(x)
 

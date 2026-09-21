@@ -2,15 +2,13 @@ function signature = amica_scientific_signature(bemobil_config)
 % GOAL
 %   Create a provenance signature from only settings that can change the
 %   AMICA/DIPFIT/ICLabel/final-cleaned output.
+%
 % METHOD
 %   Exclude force/skip switches, QC thresholds, workbook settings, output
 %   paths/filenames, and later clustering/ERSP parameters. The input
 %   .set/.fdt signature separately captures the preprocessed EEG data.
 
 S = struct();
-
-S.signature_version = ...
-    "HipExo_amica_scientific_config_v1";
 
 S.filter_lowCutoffFreqAMICA = ...
     bemobil_config.filter_lowCutoffFreqAMICA;

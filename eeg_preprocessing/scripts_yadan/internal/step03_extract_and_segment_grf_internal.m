@@ -1,24 +1,71 @@
 % GOAL
-%   Extract the GRF stream from one batch-selected XDF and define accepted
-%   walking intervals before gait-event detection.
+%   Extract the GRF stream from one XDF and define accepted walking intervals.
+%
 % INPUT
-%   GRF_BATCH_XDF_FILE and GRF_BATCH_GRF_OUTPUT_FOLDER supplied internally
-%   by step03_process_subject_grf_eeg.m.
+%   batchXDFFile          Source XDF.
+%   batchGRFOutputFolder  Subject GRF output folder.
+%   batchUnattended       Logical flag controlling GUI/manual prompts.
+%   batchOutputStem       Canonical BIDS entity stem for derivative filenames.
+%   batchSubjectID        Canonical SubjectID from Step 02 (sub-XX).
+%
+% APPROACH
+%   1. Load the GRF stream and optional GRF markers from the source XDF.
+%   2. Define walking intervals using the established marker/activity logic.
+%   3. Store the canonical Step 02 SubjectID in intervalTable.Subject.
+%   4. Save the extracted GRF MAT and segmentation QC output.
+%
 % OUTPUT
 %   *_GRF_stream.mat
+%   grf_walking_intervals.csv
 %   *_GRF_segmentation_QC.png
+%
+% USED BY
+%   step03_process_subject_grf_eeg.m
+
+function step03_extract_and_segment_grf_internal( ...
+        batchXDFFile, batchGRFOutputFolder, batchUnattended, ...
+        batchOutputStem, batchSubjectID)
+% GOAL
+%   Extract the GRF stream from one explicitly supplied XDF and define
+%   accepted walking intervals before gait-event detection.
+%
+% INPUT
+%   batchXDFFile          Source XDF. Empty enables the legacy interactive picker.
+%   batchGRFOutputFolder  Output folder. Empty uses project default.
+%   batchUnattended       Logical flag controlling figures/manual prompts.
+%   batchOutputStem       Canonical BIDS entity stem used for derivative names.
+%   batchSubjectID        Canonical participant ID from Step 02 (sub-XX).
+%
 % METHOD
-%   Preserve the current working marker-first/GRF-activity segmentation
-%   logic. This is an internal Step 03 worker and is not run manually.
+%   Preserve the current marker-first/GRF-activity segmentation logic while
+%   using an explicit function interface. No environment-variable state is
+%   used to pass recording paths or output folders.
 
-batchModeRequested = ~isempty(strtrim( ...
-    getenv('GRF_BATCH_GRF_OUTPUT_FOLDER')));
+if nargin < 1
+    batchXDFFile = "";
+end
+if nargin < 2
+    batchGRFOutputFolder = "";
+end
+if nargin < 3 || isempty(batchUnattended)
+    batchUnattended = false;
+end
+if nargin < 4
+    batchOutputStem = "";
+end
+if nargin < 5
+    batchSubjectID = "";
+end
 
-batchUnattended = strcmpi(strtrim( ...
-    getenv('GRF_BATCH_UNATTENDED')), '1');
+batchXDFFile = char(strtrim(string(batchXDFFile)));
+batchGRFOutputFolder = char(strtrim(string(batchGRFOutputFolder)));
+batchUnattended = logical(batchUnattended);
+batchOutputStem = char(strtrim(string(batchOutputStem)));
+batchSubjectID = strtrim(string(batchSubjectID));
+batchModeRequested = ~isempty(batchXDFFile) || ~isempty(batchGRFOutputFolder);
 
 processingVersion = ...
-    "GRF_extraction_v2_strict_markers_2026-08-22";
+    "GRF_extraction_v2_strict_markers";
 
 figureVisibility = 'on';
 
@@ -27,16 +74,13 @@ if batchUnattended
 end
 
 if ~batchModeRequested
-    clear;
     clc;
     close all;
 end
 
 %% Load project paths and Step 03 configuration
 
-internalFolder = fileparts(mfilename('fullpath'));
-scriptsRoot = fileparts(internalFolder);
-
+scriptsRoot = hipexo.project_root();
 addpath(scriptsRoot, '-begin');
 addpath(fullfile(scriptsRoot, 'config'), '-begin');
 
@@ -47,9 +91,6 @@ projectOutputFolder = P.outputFolder;
 grfOutputFolder = P.grfSegmentationFolder;
 
 %% Resolve batch output folder
-
-batchGRFOutputFolder = strtrim( ...
-    getenv('GRF_BATCH_GRF_OUTPUT_FOLDER'));
 
 if ~isempty(batchGRFOutputFolder)
     grfOutputFolder = batchGRFOutputFolder;
@@ -127,9 +168,6 @@ excludedMarkerWords = cfg.segmentation.excludedMarkerWords;
 
 %% Select one XDF
 
-batchXDFFile = strtrim( ...
-    getenv('GRF_BATCH_XDF_FILE'));
-
 if ~isempty(batchXDFFile)
 
     xdfFile = batchXDFFile;
@@ -152,14 +190,18 @@ if ~isfile(xdfFile)
         xdfFile);
 end
 
-sourceXDFSignature = hipexo.file_signature(xdfFile);
+sourceXDFSignature = hipexo.file_metadata_signature(xdfFile);
 
 [~, xdfBaseName] = fileparts(xdfFile);
 
-safeBaseName = regexprep( ...
-    xdfBaseName, ...
-    '[^a-zA-Z0-9_-]', ...
-    '_');
+if ~isempty(batchOutputStem)
+    safeBaseName = batchOutputStem;
+else
+    safeBaseName = regexprep( ...
+        xdfBaseName, ...
+        '[^a-zA-Z0-9_-]', ...
+        '_');
+end
 
 fprintf('\n====================================================\n');
 fprintf('GRF EXTRACTION AND SEGMENTATION\n');
@@ -281,6 +323,17 @@ if any(diff(grfTimeStamps) <= 0)
     error('GRF timestamps are not strictly increasing.');
 end
 
+sourceGRFChannelCount = size(grfData, 1);
+if ~ismember(sourceGRFChannelCount, [8 9])
+    error('Expected 8 force channels with an optional ninth sample counter; found %d.', ...
+        sourceGRFChannelCount);
+end
+sampleCounter = [];
+if sourceGRFChannelCount == 9
+    sampleCounter = grfData(9, :);
+end
+forceChannelIndices = 1:8;
+grfData = grfData(forceChannelIndices, :);
 nGRFChannels = size(grfData, 1);
 nGRFSamples = size(grfData, 2);
 
@@ -312,12 +365,6 @@ fprintf('Measured rate:       %.6g Hz\n', ...
 
 fprintf('Duration:            %.3f s\n\n', ...
     grfTimeSec(end));
-
-if nGRFChannels ~= 8
-    warning( ...
-        'Expected 8 GRF channels, but found %d.', ...
-        nGRFChannels);
-end
 
 %% Find GRF_Markers
 
@@ -391,11 +438,13 @@ end
 
 % Do not sum the eight GRF channels. They may represent different
 % physical quantities and may also contain different baseline offsets.
+%
 % Instead:
 % 1. Display every channel separately.
 % 2. Build a normalized GRF activity trace from the absolute first
 %    differences across channels.
 % 3. Use only this activity trace for selecting walking intervals.
+%
 % The activity trace is a visualization aid. It is not a vertical-GRF
 % signal and must not be used later for RHS/LHS/RTO/LTO detection.
 grfDifference = [ ...
@@ -556,9 +605,17 @@ sgtitle( ...
 
 drawnow;
 
-%% Extract metadata from filename
+%% Extract metadata
 
-subject = extract_subject(xdfBaseName);
+% In the current pipeline, participant identity is defined once in Step 02
+% as canonical SubjectID (sub-XX). Do not derive a second participant ID
+% from the legacy raw-XDF filename when the canonical ID is available.
+if strlength(batchSubjectID) > 0
+    subject = batchSubjectID;
+else
+    % Legacy interactive fallback only.
+    subject = extract_subject(xdfBaseName);
+end
 
 day = extract_token( ...
     xdfBaseName, ...
@@ -1046,7 +1103,13 @@ intervalTable = table( ...
         'Reviewed', ...
         'Notes'});
 
+disp(intervalTable);
+
 %% Define output files
+
+csvFile = fullfile( ...
+    grfOutputFolder, ...
+    'grf_walking_intervals.csv');
 
 matFile = fullfile( ...
     grfOutputFolder, ...
@@ -1056,13 +1119,54 @@ figureFile = fullfile( ...
     grfOutputFolder, ...
     [safeBaseName '_GRF_segmentation_QC.png']);
 
+%% Update shared interval CSV
+
+% Re-running the same XDF replaces its old rows.
+if isfile(csvFile)
+
+    existingTable = ...
+        hipexo.read_csv_with_string_text(csvFile);
+
+    expectedVariables = ...
+        intervalTable.Properties.VariableNames;
+
+    if ~all(ismember( ...
+            expectedVariables, ...
+            existingTable.Properties.VariableNames))
+
+        error([ ...
+            'The existing grf_walking_intervals.csv has ' ...
+            'a different structure.\n' ...
+            'Move or rename the old CSV before continuing.']);
+    end
+
+    existingTable = ...
+        existingTable(:, expectedVariables);
+
+    sameXDF = strcmp( ...
+        string(existingTable.XDFPath), ...
+        string(xdfFile));
+
+    existingTable(sameXDF, :) = [];
+
+    combinedTable = [existingTable; intervalTable];
+
+else
+    combinedTable = intervalTable;
+end
+
+writetable(combinedTable, csvFile);
+
 %% Save extracted GRF
 
 processingInfo = struct();
 processingInfo.version = char(processingVersion);
 processingInfo.source_xdf = xdfFile;
+processingInfo.source_grf_channel_count = sourceGRFChannelCount;
+processingInfo.force_channel_indices = forceChannelIndices;
 processingInfo.source_xdf_signature = char(sourceXDFSignature);
 processingInfo.segmentation_mode = char(segmentationMode);
+processingInfo.segmentation_parameters = cfg.segmentation;
 processingInfo.excluded_marker_words = excludedMarkerWords;
 processingInfo.created_on = char(datetime( ...
     'now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
@@ -1070,6 +1174,9 @@ processingInfo.created_on = char(datetime( ...
 save( ...
     matFile, ...
     'grfData', ...
+    'sampleCounter', ...
+    'sourceGRFChannelCount', ...
+    'forceChannelIndices', ...
     'grfTimeStamps', ...
     'grfTimeSec', ...
     'grfActivityTrace', ...
@@ -1102,7 +1209,27 @@ exportgraphics( ...
     'Resolution', ...
     200);
 
-fprintf('GRF segmentation completed: %d interval(s).\n', nIntervals);
+fprintf('\n====================================================\n');
+fprintf('GRF SEGMENTATION COMPLETED\n');
+fprintf('====================================================\n');
+
+fprintf('Intervals saved: %d\n', ...
+    nIntervals);
+
+fprintf('\nShared interval table:\n%s\n', ...
+    csvFile);
+
+fprintf('\nExtracted GRF stream:\n%s\n', ...
+    matFile);
+
+fprintf('\nQC figure:\n%s\n', ...
+    figureFile);
+
+fprintf([ ...
+    '\nNo EEG data were modified. ' ...
+    'No signal was resampled.\n']);
+
+end
 
 %% Local functions
 

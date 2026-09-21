@@ -1,7 +1,8 @@
-function info = activate_shared_ica_compatibility(compatibilityFolder)
+function info = activate_shared_ica_compatibility_v2(compatibilityFolder)
 % GOAL
 %   Activate and verify the project-local shared-ICA compatibility copies of
 %   EEGLAB std_preclust and BeMoBIL bemobil_dipoles.
+%
 % METHOD
 %   Resolve original package functions with the compatibility folder removed,
 %   then activate fixed audited copies at the front of the MATLAB path.
@@ -24,9 +25,8 @@ assert(exist(dipolesPatch, 'file') == 2, ...
     'Missing shared-ICA bemobil_dipoles compatibility file:\n%s', ...
     dipolesPatch);
 
-try
+if path_contains_local(compatibilityFolder)
     rmpath(compatibilityFolder);
-catch
 end
 
 clear std_preclust;
@@ -96,6 +96,11 @@ info.bemobilDipolesPatch = dipolesPatch;
 
 end
 
+function tf = path_contains_local(folder)
+entries = strsplit(path, pathsep);
+tf = any(strcmpi(cellfun(@normalize_path_local, entries, ...
+    'UniformOutput', false), normalize_path_local(folder)));
+end
 
 function tf = same_path_local(firstPath, secondPath)
 
@@ -104,7 +109,6 @@ tf = strcmpi( ...
     normalize_path_local(secondPath));
 
 end
-
 
 function outputPath = normalize_path_local(inputPath)
 

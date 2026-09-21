@@ -2,6 +2,7 @@ function result = inspect_xdf_file(xdfPath, fileIndex, cfg)
 % GOAL
 %   Inspect one XDF file and independently evaluate its EEG and GRF streams
 %   for structural usability before downstream processing.
+%
 % METHOD
 %   Load the XDF once, derive timestamp/data integrity measures for each
 %   stream, evaluate EEG and GRF independently, then create the same audit
@@ -20,6 +21,8 @@ fileName = string(name) + string(ext);
 result = struct();
 result.fileSummary = table();
 result.streamDetail = table();
+result.eegQuality = table();
+result.grfQuality = table();
 
 try
     streams = load_xdf(char(xdfPath));
@@ -60,6 +63,15 @@ eegQualityStatus = strings(nStreams, 1);
 eegQualityReason = strings(nStreams, 1);
 grfQualityStatus = strings(nStreams, 1);
 grfQualityReason = strings(nStreams, 1);
+eegOriginalStatus = strings(nStreams, 1);
+eegSegmentCheck = repmat("not_checked", nStreams, 1);
+eegRetainedRanges = repmat("[]", nStreams, 1);
+eegRetainedTimeRanges = repmat("[]", nStreams, 1);
+eegRetainedRates = repmat("[]", nStreams, 1);
+eegRetainedSamples = zeros(nStreams, 1);
+eegRetainedDurationSec = zeros(nStreams, 1);
+eegLongestTimingValidSec = nan(nStreams, 1);
+eegInvalidTimingSamples = nan(nStreams, 1);
 
 for s = 1:nStreams
 
@@ -173,6 +185,85 @@ for s = 1:nStreams
             dataFiniteSampled(s), ...
             cfg);
 
+    eegOriginalStatus(s) = eegQualityStatus(s);
+    if isUsableEEG(s) || ismember(eegQualityStatus(s), ...
+            ["BAD_effective_srate", "BAD_large_timestamp_gap"])
+        try
+            [ranges, segmentAudit, segmentTimeStamps] = ...
+                hipexo.check_eeg_segments(streams{s}, cfg, xdfPath);
+
+            eegSegmentCheck(s) = segmentAudit.status;
+            eegRetainedRanges(s) = string(jsonencode(ranges));
+
+            relativeRanges = ...
+                segmentAudit.retained_lsl_ranges - ...
+                segmentAudit.time_origin_lsl;
+
+            eegRetainedTimeRanges(s) = ...
+                string(jsonencode(relativeRanges));
+
+            retainedRatesHz = ...
+                segmentAudit.retained_rates_hz;
+
+            if ~isempty(ranges)
+
+                retainedRatesHz = ...
+                    nan(size(ranges, 1), 1);
+
+                for iRange = 1:size(ranges, 1)
+
+                    firstSample = ...
+                        ranges(iRange, 1);
+
+                    lastSample = ...
+                        ranges(iRange, 2);
+
+                    retainedSegmentDurationSec = ...
+                        segmentTimeStamps(lastSample) - ...
+                        segmentTimeStamps(firstSample);
+
+                    if isfinite(retainedSegmentDurationSec) && ...
+                            retainedSegmentDurationSec > 0 && ...
+                            lastSample > firstSample
+
+                        retainedRatesHz(iRange) = ...
+                            (lastSample - firstSample) / ...
+                            retainedSegmentDurationSec;
+
+                    end
+
+                end
+
+                retainedRatesHz = ...
+                    retainedRatesHz(isfinite(retainedRatesHz));
+
+            end
+
+            eegRetainedRates(s) = ...
+                string(jsonencode(retainedRatesHz));
+
+            eegRetainedSamples(s) = segmentAudit.retained_samples;
+            eegRetainedDurationSec(s) = segmentAudit.retained_duration_sec;
+            eegLongestTimingValidSec(s) = segmentAudit.longest_timing_valid_segment_sec;
+            eegInvalidTimingSamples(s) = segmentAudit.invalid_timing_samples;
+            isUsableEEG(s) = ~isempty(ranges);
+            if isUsableEEG(s) && segmentAudit.status ~= "whole_recording"
+                eegQualityStatus(s) = "OK_retained_segments";
+                eegQualityReason(s) = "only_retained_sample_ranges_pass_existing_EEG_QC";
+            elseif ~isUsableEEG(s)
+                if ~startsWith(eegQualityStatus(s), "BAD_")
+                    eegQualityStatus(s) = "BAD_segment_QC";
+                end
+                eegQualityReason(s) = eegQualityReason(s) + ";" + segmentAudit.status;
+            end
+        catch segmentError
+            isUsableEEG(s) = false;
+            eegQualityStatus(s) = "BAD_segment_check_error";
+            eegQualityReason(s) = string(segmentError.message);
+            eegSegmentCheck(s) = "recheck_failed";
+        end
+    end
+
     [ ...
         isUsableGRF(s), ...
         grfQualityStatus(s), ...
@@ -205,6 +296,10 @@ if hasUsableEEG
     fileEEGQualityStatus = "OK";
     fileEEGQualityReason = ...
         "at_least_one_usable_eeg_stream_found";
+    if all(eegQualityStatus(isUsableEEG) == "OK_retained_segments")
+        fileEEGQualityStatus = "OK_retained_segments";
+        fileEEGQualityReason = "only_audited_EEG_segments_may_enter_analysis";
+    end
 elseif hasRealEEG
     firstEEGIndex = find(isEEGCandidate, 1, 'first');
     fileEEGQualityStatus = ...
@@ -354,9 +449,28 @@ for s = 1:nStreams
             'GRFQualityStatus', ...
             'GRFQualityReason'});
 
+    streamRow.EEGOriginalQualityStatus = eegOriginalStatus(s);
+    streamRow.EEGSegmentCheck = eegSegmentCheck(s);
+    streamRow.EEGRetainedSampleRanges = eegRetainedRanges(s);
+    streamRow.EEGRetainedTimeRangesSec = eegRetainedTimeRanges(s);
+    streamRow.EEGRetainedRatesHz = eegRetainedRates(s);
+    streamRow.EEGRetainedSamples = eegRetainedSamples(s);
+    streamRow.EEGRetainedDurationSec = eegRetainedDurationSec(s);
+    streamRow.EEGLongestTimingValidSegmentSec = eegLongestTimingValidSec(s);
+    streamRow.EEGInvalidTimingSamples = eegInvalidTimingSamples(s);
+
     result.streamDetail = ...
         [result.streamDetail; streamRow]; %#ok<AGROW>
 
+    if isEEGCandidate(s)
+        result.eegQuality = ...
+            [result.eegQuality; streamRow]; %#ok<AGROW>
+    end
+
+    if isGRFCandidate(s)
+        result.grfQuality = ...
+            [result.grfQuality; streamRow]; %#ok<AGROW>
+    end
 end
 
 end
@@ -524,12 +638,6 @@ elseif ~isfinite(durationSec) || durationSec <= 0
     status = "BAD_duration";
     reason = "eeg_duration_is_missing_or_invalid";
 
-elseif durationSec < cfg.eeg.minimumDurationSec
-
-    status = "BAD_too_short";
-    reason = ...
-        "eeg_duration_is_shorter_than_minimum_required_duration";
-
 elseif ~isfinite(effectiveSrate) || effectiveSrate <= 0
 
     status = "BAD_effective_srate";
@@ -606,11 +714,11 @@ identityWarning = ...
     ~strcmpi(streamType, cfg.grf.streamType);
 
 if ~isfinite(channelCount) || ...
-        channelCount ~= cfg.grf.expectedChannelCount
+        ~ismember(channelCount, cfg.grf.allowedChannelCounts)
 
     status = "BAD_channel_count";
     reason = ...
-        "GRF_stream_does_not_have_the_expected_8_channels";
+        "GRF_stream_does_not_have_an_allowed_channel_count";
 
 elseif ~isfinite(nDataSamples) || nDataSamples <= 0
 

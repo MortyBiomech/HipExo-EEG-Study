@@ -2,9 +2,14 @@ function bemobil_config = config_step05_09_eeg_preprocessing_ica(P)
 % GOAL
 %   Define the BeMoBIL EEG preprocessing, AMICA, DIPFIT, and ICLabel
 %   parameters used before manual cortical IC review.
+%
 % METHOD
 %   Preserve the current working preprocessing settings while keeping
 %   repeated clustering, ROI, and ERSP parameters out of this configuration.
+%
+% IMPORTANT
+%   Processing-version labels are stable semantic labels. Run dates belong
+%   in runtime provenance columns and are not hard-coded into version names.
 
 arguments
     P (1,1) struct
@@ -17,18 +22,23 @@ end
 % Keep false when DoPreprocess is manually edited in the CSV.
 bemobil_config.pipeline.reset_DoPreprocess_from_Recommended = false;
 
-% Current working script setting:
 % 1 = recompute preprocessing even when output exists.
 % 0 = reuse verified output when provenance matches.
-bemobil_config.pipeline.force_recompute_preprocessing = 1;
+% Default to reuse; turn on only when intentionally rebuilding Step 05.
+bemobil_config.pipeline.force_recompute_preprocessing = 0;
+
+%% Step 05 reproducibility
+
+% Fixed seed for reproducible RANSAC-based bad-channel detection.
+bemobil_config.preprocessingRandomSeed = 0;
 
 %% Step 06 preprocessing QC
 
 bemobil_config.preprocessingQC.expectedChannels = 64;
-bemobil_config.preprocessingQC.rankSampleLimit = 10000;
 
+% Stable semantic version; no calendar date is embedded here.
 bemobil_config.preprocessingQC.processingVersion = ...
-    "preprocessed_EEG_QC_v2_output_signature_2026-08-22";
+    "preprocessed_EEG_QC_v3_subject_identity_normalized";
 
 bemobil_config.preprocessingQC.lineNoiseFrequencyHz = 50;
 bemobil_config.preprocessingQC.maxLineNoisePeakDb = 8;
@@ -39,7 +49,8 @@ bemobil_config.preprocessingQC.reset_DoQC_from_PreprocessingStatus = false;
 
 %% Step 07 AMICA / DIPFIT / ICLabel run control
 
-% Keep false when DoAMICA is manually controlled in the processing table.
+% Keep false while DoAMICA is manually/table controlled. Step 07 can
+% derive missing values from the current preprocessing-QC result.
 bemobil_config.pipeline.reset_DoAMICA_from_PreprocessingQC = false;
 
 % 1 = recompute even when verified outputs already exist.
@@ -56,13 +67,6 @@ bemobil_config.pipeline.expectedChannelsBeforeAMICA = 64;
 %% Step 08 AMICA / ICA quality control
 
 bemobil_config.icaQC.expectedChannels = 64;
-bemobil_config.icaQC.rankSampleLimit = 10000;
-
-% RV thresholds are fractions, not percentages.
-bemobil_config.icaQC.rvThreshold15 = 0.15;
-bemobil_config.icaQC.rvThreshold20 = 0.20;
-
-bemobil_config.icaQC.maxAMICABadSamplesPercent = 20;
 
 % Keep false when DoICAQC is manually controlled in the processing table.
 bemobil_config.icaQC.reset_DoICAQC_from_AMICAStatus = false;
@@ -194,6 +198,7 @@ bemobil_config.iclabel_classifier = 'lite';
 % 5 Line Noise
 % 6 Channel Noise
 % 7 Other
+%
 % Dominant Eye components are removed from cleaned_with_ICA.
 % preprocessed_and_ICA remains the source for manual cortical IC review.
 bemobil_config.iclabel_classes = [1 2 4 5 6 7];

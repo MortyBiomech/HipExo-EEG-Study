@@ -1,6 +1,7 @@
 % GOAL
 %   Return the representative DIPFIT coordinate used in the manual IC
 %   review workbook.
+%
 % METHOD
 %   Preserve the current review-workbook rule exactly: use the only valid
 %   dipole when one exists; for multiple valid dipoles, select the dipole
@@ -59,5 +60,4 @@ function xyz = representative_dipole_xyz(model)
 
     xyz = positions(selectedRow, :);
 end
-
 

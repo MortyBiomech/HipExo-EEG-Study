@@ -2,9 +2,10 @@ function cfg = config_step03_04_grf_processing()
 % GOAL
 %   Define the parameters used for GRF extraction, walking-interval
 %   segmentation, gait-event detection, GRF-to-EEG mapping, and gait-cycle QC.
+%
 % METHOD
-%   Preserve the current working GRF parameters while exposing the values
-%   that are scientifically or operationally useful to tune later.
+%   Configure extraction and QC together with the laboratory GRF detector
+%   and per-interval threshold search.
 
 %% Step 03A - walking-interval segmentation
 
@@ -38,11 +39,16 @@ cfg.detection.leftChannels  = [2 3 6 7];
 cfg.detection.lowpassHz = 15;
 
 cfg.detection.thresholdOn = 0.03;
-cfg.detection.thresholdOff = 0.02;
+cfg.detection.thresholdOff = 0.01;
 
-cfg.detection.minimumContactSec = 0.20;
-cfg.detection.maximumContactSec = 1.50;
-cfg.detection.minimumStrideSec = 0.60;
+% The fixed fractions above are used only when optimization is disabled.
+% Laboratory V1: five interval SDs, Pareto front, then minimum right stance SD.
+cfg.detection.optimizeThresholds = true;
+cfg.detection.thresholdOnValues = 0.01:0.005:0.06;
+cfg.detection.thresholdOffValues = 0.01:0.005:0.06;
+
+cfg.detection.minimumEventIntervalSec = 0.60;
+cfg.detection.maximumEventGRFFraction = 0.15;
 
 cfg.detection.qcZoomWindowSec = 15;
 

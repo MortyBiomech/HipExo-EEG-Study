@@ -1,15 +1,19 @@
 %% audit_output_inventory.m
 % Read-only audit of the complete HipExo output_data folder.
+%
 % This script does not change, move, delete, epoch, resave or overwrite any
 % existing EEG/STUDY result. It only reads file metadata and writes audit
 % files into:
+%
 %   output_data/00_output_inventory_audit/
+%
 % Upload output_audit_bundle.zip from that folder for the next review.
 
 clear;
 clc;
 
 % LOCATION
+
 % Normally leave this empty. The script then reads outputFolder from paths.m.
 % If this script is not stored beside paths.m, enter output_data manually:
 % manualOutputRoot = "E:\master_thesis\HipExo-EEG-Study_1\EEG_preprocessing_Yadan\output_data";
@@ -41,6 +45,7 @@ if ~isfolder(auditFolder)
 end
 
 % EEGLAB METADATA READER
+
 % pop_loadset(..., 'loadmode', 'info') reads EEG metadata without loading
 % the large signal array from the paired .fdt file.
 if exist('pop_loadset', 'file') ~= 2
@@ -62,6 +67,7 @@ fprintf('============================================================\n');
 auditStarted = datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss');
 
 % COMPLETE FILE/FOLDER INVENTORY
+
 allItems = dir(fullfile(outputRoot, '**', '*'));
 
 fileRows = repmat(file_row_template_local(), 0, 1);
@@ -115,6 +121,7 @@ fprintf('Filesystem scan: %d items, %d SET files, %d STUDY files.\n', ...
     height(fileInventory), numel(setPaths), numel(studyPaths));
 
 % EEGLAB .SET METADATA
+
 setRows = repmat(set_row_template_local(), 0, 1);
 eventRows = repmat(event_row_template_local(), 0, 1);
 errorRows = repmat(error_row_template_local(), 0, 1);
@@ -244,6 +251,7 @@ eventInventory = struct_rows_to_table_local( ...
     eventRows, event_row_template_local());
 
 % EEGLAB .STUDY METADATA AND REFERENCES
+
 studyRows = repmat(study_row_template_local(), 0, 1);
 studyDatasetRows = repmat(study_dataset_row_template_local(), 0, 1);
 clusterRows = repmat(cluster_row_template_local(), 0, 1);
@@ -418,6 +426,7 @@ auditErrors = struct_rows_to_table_local( ...
     errorRows, error_row_template_local());
 
 % SAVE TABLES
+
 outputInventoryPath = fullfile(auditFolder, 'output_inventory.csv');
 setInventoryPath = fullfile(auditFolder, 'eeg_set_inventory.csv');
 eventInventoryPath = fullfile(auditFolder, 'eeg_event_inventory.csv');
@@ -463,12 +472,14 @@ save(metadataPath, ...
     '-v7.3');
 
 % HUMAN-READABLE REPORT
+
 write_report_local( ...
     reportPath, outputRoot, auditStarted, auditFinished, ...
     fileInventory, setInventory, studyInventory, ...
     studyDatasetReferences, studyClusterInventory, auditErrors);
 
 % ONE SMALL FILE TO UPLOAD
+
 bundleNames = { ...
     'output_inventory.csv', ...
     'eeg_set_inventory.csv', ...
