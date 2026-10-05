@@ -86,3 +86,6 @@ desktop.ini
 .idea/
 *.swp
 *.swo
+
+# Local paths for the ICNR poster EMG analysis
+poster_ICNR2026/emg/config_poster_emg_local.m
