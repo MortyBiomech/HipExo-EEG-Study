@@ -15,6 +15,13 @@ clear; clc;
 
 %% ---------------- USER SETTINGS: edit this section only ----------------
 run('config_paths.m');
+% DIRECT OUTPUT v1.1.0. Use your original PilotTest3 config_paths.m.
+% Edit this same container in plot_existing_session_gait_cycles.m if needed.
+derivativesContainer = bids_root;
+assert(contains(string(data_path),'PilotTest3','IgnoreCase',true), ...
+    'This script is restricted to PilotTest3.');
+save_path=directDataset(derivativesContainer,'p3emgprep');
+
 
 % Use a subject-specific mapping when it exists. For subject_P3_1 and later, the
 % subject_P3_1 DEC-ID mapping is the fallback because the same physical sensors
@@ -35,10 +42,12 @@ fprintf('Subject mapping: %d sensors -> %d EMG channels.\n', ...
     numel(unique(sensorMap.SensorID)), height(sensorMap));
 
 % Sessions containing these keywords will never be processed
-excludedSessionKeywords = ["calib"];
+excludedSessionKeywords = ["calib","setup"];
 
 % Empty string = process every session found for run_id. Example: use
 % "Exo3_sport" to process only the session whose path contains that text.
+
+% sessionFilter = "";
 
 % P3_1 day1
 
@@ -49,7 +58,7 @@ excludedSessionKeywords = ["calib"];
 % sessionFilter = "Exo4_eco";
 % sessionFilter = "Exo5_boost";
 % sessionFilter = "Exo6_aquaplus";
-% sessionFilter = "NoExoPost";
+% sessionFilter = "";
 
 % day2
 
@@ -60,7 +69,7 @@ excludedSessionKeywords = ["calib"];
 % sessionFilter = "Exo4_boost";
 % sessionFilter = "Exo5_aqua";
 % sessionFilter = "Exo6_sport";
-% sessionFilter = "NoExoPost";
+% sessionFilter = "";
 
 % P3_2 day1
 
@@ -71,7 +80,7 @@ excludedSessionKeywords = ["calib"];
 % sessionFilter = "Exo4_eco";
 % sessionFilter = "Exo5_aqua";
 % sessionFilter = "Exo6_boost";
-% sessionFilter = "NoExoPost";
+% sessionFilter = "";
 
 % day2
 
@@ -82,11 +91,10 @@ excludedSessionKeywords = ["calib"];
 % sessionFilter = "Exo4_boost";
 % sessionFilter = "Exo5_aquaplus";
 % sessionFilter = "Exo6_sport";
-% sessionFilter = "NoExoPost";
+% sessionFilter = "";
 
 % P3_3 day1
 
-% sessionFilter = "";
 % sessionFilter = "NoExoPre";
 % sessionFilter = "Exo1_sport";
 % sessionFilter = "Exo2_eco";
@@ -94,7 +102,7 @@ excludedSessionKeywords = ["calib"];
 % sessionFilter = "Exo4_transparent";
 % sessionFilter = "Exo5_boost";
 % sessionFilter = "Exo6_aquaplus";
-% sessionFilter = "NoExoPost";
+sessionFilter = "";
 
 % day2
 
@@ -105,11 +113,10 @@ excludedSessionKeywords = ["calib"];
 % sessionFilter = "Exo4_eco";
 % sessionFilter = "Exo5_aqua";
 % sessionFilter = "Exo6_sport";
-% sessionFilter = "NoExoPost";
+% sessionFilter = "";
 
 % P3_4 day1
 
-% sessionFilter = "";
 % sessionFilter = "NoExoPre";
 % sessionFilter = "Exo1_sport";
 % sessionFilter = "Exo2_aqua";
@@ -117,18 +124,18 @@ excludedSessionKeywords = ["calib"];
 % sessionFilter = "Exo4_boost";
 % sessionFilter = "Exo5_eco";
 % sessionFilter = "Exo6_transparent";
-sessionFilter = "NoExoPost";
+% sessionFilter = "";
 
 % day2
 
 % sessionFilter = "NoExoPre";
-% sessionFilter = "Exo1_aquaplus";
-% sessionFilter = "Exo2_transparent";
-% sessionFilter = "Exo3_boost";
-% sessionFilter = "Exo4_eco";
-% sessionFilter = "Exo5_aqua";
-% sessionFilter = "Exo6_sport";
-% sessionFilter = "NoExoPost";
+% sessionFilter = "Exo1_transparent";
+% sessionFilter = "Exo2_sport";
+% sessionFilter = "Exo3_aqua";
+% sessionFilter = "Exo4_boost";
+% sessionFilter = "Exo5_eco";
+% sessionFilter = "Exo6_aquaplus";
+% sessionFilter = "";
 
 % Existing GRF layout retained from get_4_gait_events.m.  Confirm it once by
 % checking the validation figure.  Indices refer to the 9 channels in GRF.
@@ -192,16 +199,21 @@ fprintf('Found %d %s recording(s) for processing.\n', ...
 
 for fileIndex = 1:numel(inputFiles)
     sourceFile = fullfile(inputFiles(fileIndex).folder, inputFiles(fileIndex).name);
-    [~, baseName] = fileparts(sourceFile);
+    [~, ~] = fileparts(sourceFile);
     sessionFolder = getSessionFolder(sourceFile);
 
-    if inputMode == "BDF"
-        outDir = fullfile(bids_root, 'derivatives', 'test_emg_timewarp', ...
-            ['sub-' bids_subject_id], sessionFolder, 'emg');
-    else
-        outDir = fullfile(save_path, sessionFolder);
-    end
-    if ~exist(outDir, 'dir'), mkdir(outDir); end
+    sourceIdentity=directIdentity(sourceFile,struct('fallbackDay',experiment_day));
+    baseName=string(sourceIdentity.Prefix);
+    sessionRoot=fullfile(save_path,['sub-' sourceIdentity.Subject], ...
+        ['ses-' sourceIdentity.Session]);
+    outDir=fullfile(sessionRoot,'emg');
+    figureDir=fullfile(sessionRoot,'figures');
+    if ~isfolder(outDir), mkdir(outDir); end
+    if ~isfolder(figureDir), mkdir(figureDir); end
+    directJSON(fullfile(outDir,baseName+"_desc-preprocessing_provenance.json"), ...
+        struct('SourceFiles',{{sourceFile}},'Identity',sourceIdentity, ...
+        'BandpassHz',bandpassHz,'EnvelopeLowpassHz',envelopeLowpassHz, ...
+        'PipelineVersion','1.1.0','TimeWarpedDataAreEnvelopes',true));
 
     fprintf('\n========================================================\n');
     fprintf('Processing [%d/%d] %s: %s\n', ...
@@ -264,8 +276,9 @@ if inputMode == "XDF"
         'Plot', showValidationFigures, 'Verbose', true);
     all_events = makeAllEvents(HS_R, TO_R, HS_L, TO_L, ...
         grfT(find(use,1)), grfT(find(use,1,'last')));
-    eventFile = fullfile(outDir, baseName + "_gait_events.mat");
-    save(eventFile, 'all_events', 'HS_R', 'TO_R', 'HS_L', 'TO_L', ...
+    eventFile = fullfile(outDir, baseName + "_desc-gait_events.mat");
+    p3EventOrigin=emgT(1); p3EventReference='First sample of the EMG stream in the source XDF, shared LSL clock';
+    save(eventFile, 'p3EventOrigin','p3EventReference','all_events', 'HS_R', 'TO_R', 'HS_L', 'TO_L', ...
         'grfRightChannels', 'grfLeftChannels', 'best_on', 'best_off');
     fprintf('Saved %d gait events: %s\n', numel(all_events), eventFile);
 else
@@ -284,7 +297,7 @@ if inputMode == "XDF"
     EEG.xmin   = 0;
     EEG.xmax   = (EEG.pnts - 1) / EEG.srate;
     EEG.times  = (0:EEG.pnts-1) / EEG.srate * 1000;
-    EEG.setname = [baseName '_continuous_EMG'];
+    EEG.setname = char(baseName + "_continuous_EMG");
 
     for ch = 1:EEG.nbchan
         EEG.chanlocs(ch).labels = char(sensorMap.Muscle(ch));
@@ -539,7 +552,7 @@ if showOverlapEpochFigure
     plotOverlappingEpochWindows(EEGContinuousEnvelope, ...
         cleanEpochAnchorContinuous, epochWindow, ...
         overlapDisplayFirstEpoch, overlapDisplayCount, ...
-        outDir, baseName);
+        figureDir, baseName);
 end
 
 %% Step 3.3: Physical five-event time-warp: first HS_R -> last HS_R
@@ -637,7 +650,7 @@ meanL = mean(plotProfilesL,3,'omitnan');
 stdL  = std(plotProfilesL,0,3,'omitnan');
 
 gaitPct = EEG.times;
-resultFile = fullfile(outDir, baseName + "_emg_timewarped.mat");
+resultFile = fullfile(outDir, baseName + "_desc-timewarped_emg.mat");
 save(resultFile, 'sensorMap','emgMeta','fsEMG','bandpassHz','envelopeLowpassHz', ...
     'EEG','emgT','all_events','best_on','best_off','timewarpInfo', ...
     'epochWindow','epochAnchorLatencyContinuous','cleanEpochAnchorContinuous', ...
@@ -651,10 +664,10 @@ save(resultFile, 'sensorMap','emgMeta','fsEMG','bandpassHz','envelopeLowpassHz',
 %% 4.1 Full 22-channel gait curves
 figAll = plotAllChannelProfiles(plotAllProfiles,meanAll,stdAll, ...
     sensorMap.Muscle,gaitPct,yLabel,eventPct,eventNames,baseName,fsEMG);
-exportgraphics(figAll, fullfile(outDir, ...
-    baseName + "_all_22_EMG_gait_curves.png"), 'Resolution', 300);
-exportgraphics(figAll, fullfile(outDir, ...
-    baseName + "_all_22_EMG_gait_curves.pdf"), ...
+exportgraphics(figAll, fullfile(figureDir, ...
+    baseName + "_desc-allChannelsGait_figure.png"), 'Resolution', 300);
+exportgraphics(figAll, fullfile(figureDir, ...
+    baseName + "_desc-allChannelsGait_figure.pdf"), ...
     'ContentType','image','Resolution',300);
 
 %% 4.2 Six-muscle gait summary: right (top) and left (bottom)
@@ -676,8 +689,8 @@ for k = 1:numel(allAxes)
 end
 drawnow;
 
-exportgraphics(fig, fullfile(outDir, baseName + "_six_EMG_gait_curves.png"), 'Resolution', 300);
-exportgraphics(fig, fullfile(outDir, baseName + "_six_EMG_gait_curves.pdf"), ...
+exportgraphics(fig, fullfile(figureDir, baseName + "_desc-sixMusclesGait_figure.png"), 'Resolution', 300);
+exportgraphics(fig, fullfile(figureDir, baseName + "_desc-sixMusclesGait_figure.pdf"), ...
     'ContentType','image','Resolution',300);
 fprintf('Saved time-warped data and six-muscle gait curves in: %s\n', outDir);
 fprintf('Saved the complete 22-channel gait-curve figure in: %s\n', outDir);
@@ -687,6 +700,8 @@ end % fileIndex loop
 fprintf('\n========================================================\n');
 fprintf('Finished processing %d %s recording(s).\n', ...
     numel(inputFiles), inputMode);
+
+fprintf('Direct output: %s\n',save_path);
 
 %% Local functions
 function sensorMap = buildFullChannelMap(subjectInfo)
@@ -1079,7 +1094,7 @@ end
 function events = eventsFromEEG(EEG)
     events = struct('type', {}, 'time', {});
     for ii = 1:numel(EEG.event)
-        events(ii).type = char(string(EEG.event(ii).type)); %#ok<AGROW>
+        events(ii).type = char(string(EEG.event(ii).type)); 
         events(ii).time = (double(EEG.event(ii).latency) - 1) / EEG.srate;
     end
 end
@@ -1255,7 +1270,7 @@ function value = getChannelFieldText(entry, fieldName)
     value = "";
     if ~isstruct(entry) || ~isfield(entry, fieldName), return; end
     rawValue = entry.(fieldName);
-    while iscell(rawValue) && numel(rawValue) == 1
+    while iscell(rawValue) && isscalar(rawValue)
         rawValue = rawValue{1};
     end
     if isempty(rawValue) || isstruct(rawValue), return; end
@@ -1674,7 +1689,66 @@ function fig = plotOverlappingEpochWindows(EEGContinuous,anchorLatency, ...
     drawnow;
 
     overlapFile = fullfile(outDir,baseName + ...
-        "_clean_epochs_overlapping_timeline.png");
+        "_desc-overlappingEpochs_figure.png");
     exportgraphics(fig,overlapFile,'Resolution',300);
     fprintf('>> Saved overlapping clean-epoch timeline: %s\n',overlapFile);
+end
+
+function root = directDataset(container, pipeline)
+root = fullfile(char(container), 'derivatives', char(pipeline));
+
+if ~isfolder(root)
+    mkdir(root);
+end
+
+description = struct( ...
+    'Name', ['PilotTest3 ' char(pipeline)], ...
+    'BIDSVersion', '1.11.2', ...
+    'DatasetType', 'derivative', ...
+    'GeneratedBy', {{struct('Name', char(pipeline))}});
+
+directJSON(fullfile(root, 'dataset_description.json'), description);
+end
+
+function directJSON(path,value)
+fid=fopen(path,'w','n','UTF-8');
+assert(fid>=0,'Cannot write: %s',path);
+cleaner=onCleanup(@()fclose(fid));
+fprintf(fid,'%s\n',jsonencode(value,'PrettyPrint',true));
+end
+
+function id=directIdentity(source,cfg)
+% Reversible source-label mapping is written into every export manifest.
+source=char(source); [~,name,~]=fileparts(strrep(source,'\','/'));
+s=regexp(name,'sub-(.*?)_ses-','tokens','once');
+c=regexp(name,'_ses-(.*?)_task-','tokens','once');
+r=regexp(name,'_run-(\d+)(?:_|$)','tokens','once');
+t=regexp(name,'_task-([A-Za-z0-9]+)','tokens','once');
+assert(~isempty(s)&&~isempty(c)&&~isempty(r),'Cannot identify source: %s',source);
+sub=s{1};
+assert(~isempty(regexp(sub,'^(?:Pilot3_\d+|Pilot3\d+|P3_\d+)$','once')), ...
+    'PilotTest3 source required, got subject %s. PilotTest2 is excluded.',sub);
+d=regexp(strrep(source,'\','/'),'(?:^|/)(day\d+)(?:/|$)','tokens','once');
+if isempty(d)
+    d=regexp(c{1},'^(day\d+)(?=[A-Z])','tokens','once');
+end
+
+if isempty(d)
+    assert(isfield(cfg,'fallbackDay')&&~isempty(cfg.fallbackDay), ...
+        'Experiment day missing from source path. Set cfg.fallbackDay explicitly: %s',source);
+    day=char(cfg.fallbackDay);
+else, day=d{1}; 
+
+end
+assert(~isempty(regexp(day,'^day\d+$','once')),'Day must be day1, day2, etc.');
+condition=regexprep(c{1},['^' day],'');
+if isempty(t), task='Default';
+    
+else, task=t{1}; 
+
+end
+id=struct('OriginalSubject',sub,'Subject',regexprep(sub,'[^A-Za-z0-9]',''), ...
+    'Day',day,'OriginalSession',condition,'Session',[day regexprep(condition,'[^A-Za-z0-9]','')], ...
+    'Task',task,'Run',sprintf('%03d',str2double(r{1})), 'SourceFile',source);
+id.Prefix=sprintf('sub-%s_ses-%s_task-%s_run-%s',id.Subject,id.Session,id.Task,id.Run);
 end

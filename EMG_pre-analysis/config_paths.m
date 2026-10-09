@@ -4,7 +4,8 @@
 project_root = 'C:\2026SSArbeit\HipExo-EEG-Study';
 eeglab_path  = 'C:\egglab_task\eeglab2025.1.0\plugins\xdfimport1.2';
 data_parent  = 'C:\2026SSArbeit\data';
-bids_root    = fullfile(data_parent, 'HipExo-EEG-Study_BIDS');
+% Optional existing BIDS root. Empty = <dataset_folder>_BIDS.
+bids_root_override = '';
 
 % 2. Experiment and participant selection
 % naming_mode:
@@ -14,27 +15,17 @@ naming_mode = 'pilot';
 
 % ---- Pilot mode: normally edit only these two values ----
 pilot_test_number = 3;
-participant_number = 4;
+participant_number = 3;
 
 % ---- Custom/formal mode: used only when naming_mode = 'custom' ----
 custom_dataset_folder = 'FormalExperiment';
 custom_subject_code   = 'S1_1';
 custom_subject_id     = 'Subject1_1';
 
-% Sensor-map selector, independent of the data-folder name. This expects
-% subject_P3_1_infos.m containing the table variable subject_P3_1.
-% Keep this value for later participants if they use the same sensor IDs and
-% muscle placement; change it only when the physical sensor map changes.
+% Optional explicit sensor-map variable/script stem; empty = follow subject_code.
+sensor_map_override = '';
 
-current_subject = sprintf( ...
-    'subject_P%d_%d', ...
-    pilot_test_number, participant_number);
-
-% current_subject = sprintf( ...
-%     'subject_S%d_%d', ...
-%     pilot_test_number, participant_number);
-
-experiment_day = 'day1';
+experiment_day = 'day2';
 run_id = '001';
 
 switch lower(naming_mode)
@@ -58,6 +49,29 @@ switch lower(naming_mode)
     otherwise
         error('naming_mode must be either ''pilot'' or ''custom''.');
 end
+
+% Mapping follows selected pilot/custom subject unless explicitly overridden.
+current_subject = ['subject_' char(subject_code)];
+if ~isempty(sensor_map_override)
+    current_subject = char(sensor_map_override);
+end
+subjectInfoFile = [current_subject '_infos.m'];
+
+% One authoritative BIDS root for the other direct-output analysis scripts.
+if isempty(bids_root_override)
+    bids_root = fullfile(data_parent, [char(dataset_folder) '_BIDS']);
+else
+    bids_root = char(bids_root_override);
+end
+derivatives_root = fullfile(bids_root, 'derivatives');
+% Compatibility alias only: never assign a separate path to this variable.
+derivativesContainer = bids_root;
+
+if ~exist('neck_qc','var') || ~isstruct(neck_qc)
+    neck_qc = struct;
+end
+neck_qc.derivativesContainer = bids_root;
+neck_qc.subjectInfoFile = subjectInfoFile;
 
 % 3. Automatically generated paths and identifiers
 data_root = fullfile(data_parent, dataset_folder);
@@ -95,13 +109,6 @@ addpath(genpath(project_root));
 addpath(genpath(fullfile(project_root, 'EMG_pre-analysis')));
 addpath(eeglab_path);
 
-% 5. Output path
-save_path = fullfile(check_day_path, 'processed_EMG');
-
-if ~exist(save_path, 'dir')
-    mkdir(save_path);
-end
-
 fprintf(['>> Configuration loaded successfully:\n' ...
     '   naming mode : %s\n' ...
     '   data root   : %s\n' ...
@@ -110,3 +117,5 @@ fprintf(['>> Configuration loaded successfully:\n' ...
     '   sensor map  : %s_infos.m\n'], ...
     naming_mode, data_root, subject_folder, subject_id, ...
     experiment_day, run_id, current_subject);
+
+fprintf('   BIDS root   : %s\n   derivatives : %s\n', bids_root, derivatives_root);

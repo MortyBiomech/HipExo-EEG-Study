@@ -1,6 +1,6 @@
 %% Compare gait-cycle EMG curves from every existing session
 % The script reads subject/day/path settings from config_paths.m, then scans
-% save_path/ses-* for existing *_emg_timewarped.mat files.
+% the direct p3emgprep-v110 derivatives for the configured subject/day.
 % Missing conditions are allowed; the script never assumes eight sessions.
 
 clearvars;
@@ -10,7 +10,7 @@ clc;
 %% ------------------------- USER SETTINGS -------------------------------
 % Load the same subject and day that were used by the processing pipeline.
 % This makes rootDir point to, for example:
-% C:\2026SSArbeit\data\PilotTest2\Sub-P2_4\day2\processed_EMG
+% PilotTest3_BIDS/derivatives/p3emgprep/sub-Pilot33
 scriptDir = fileparts(mfilename('fullpath'));
 configFile = fullfile(scriptDir, 'config_paths.m');
 if exist(configFile, 'file') ~= 2
@@ -20,7 +20,21 @@ assert(exist(configFile, 'file') == 2, ...
     'config_paths.m was not found beside this script or on the MATLAB path: %s', ...
     configFile);
 run(configFile);
-rootDir = save_path;
+% DIRECT OUTPUT v1.1.0: same container as the preprocessing script.
+derivativesContainer = bids_root;
+
+assert(~isempty(regexp(char(subject_id),'^Pilot3_?\d+$','once')), ...
+    'Only PilotTest3 is supported.');
+subLabel=regexprep(char(subject_id),'[^A-Za-z0-9]','');
+
+rootDir=fullfile(derivativesContainer,'derivatives','p3emgprep', ...
+    ['sub-' subLabel]);
+
+assert(isfolder(rootDir),'Run the direct-output EMG preprocessing script first: %s',rootDir);
+
+comparisonRoot=directDataset(derivativesContainer,'p3gaitcomparison');
+
+comparisonPrefix=['sub-' subLabel '_desc-' char(experiment_day)];
 
 runFilter = "";                       % e.g. "run-001"; "" keeps every run
 showStdBands = true;                  % mean +/- one standard deviation
@@ -31,12 +45,13 @@ closeAfterSaving = false;              % true prevents many open windows
 
 lineWidth = 2.2;
 stdAlpha = 0.10;
-outputDir = fullfile(rootDir, 'gait_cycle_session_comparison');
+outputDir=fullfile(comparisonRoot,['sub-' subLabel],'figures');
 %% -----------------------------------------------------------------------
 
 if ~exist(outputDir, 'dir'), mkdir(outputDir); end
 
-resultFiles = dir(fullfile(rootDir, '**', '*_emg_timewarped.mat'));
+resultFiles = dir(fullfile(rootDir, ['ses-' char(experiment_day) '*'], ...
+    'emg', '*_desc-timewarped_emg.mat'));
 if strlength(runFilter) > 0 && ~isempty(resultFiles)
     fullNames = string(arrayfun(@(f) fullfile(f.folder, f.name), ...
         resultFiles, 'UniformOutput', false));
@@ -191,9 +206,9 @@ if makeOverviewFigure
 
     hideAxesToolbars(overview);
     exportgraphics(overview, fullfile(outputDir, ...
-        'all_22_channels_session_comparison.png'), 'Resolution', 250);
+        [comparisonPrefix 'AllChannels_figure.png']), 'Resolution', 250);
     savefig(overview, fullfile(outputDir, ...
-        'all_22_channels_session_comparison.fig'));
+        [comparisonPrefix 'AllChannels_figure.fig']));
     if closeAfterSaving, close(overview); end
 end
 
@@ -245,16 +260,19 @@ if makeIndividualFigures
         end
 
         hideAxesToolbars(fig);
-        safeLabel = regexprep(char(channelLabel), '[^A-Za-z0-9_-]', '_');
+        safeLabel = regexprep(char(channelLabel), '[^A-Za-z0-9]', '');
         exportgraphics(fig, fullfile(outputDir, ...
-            ['gait_cycle_' safeLabel '.png']), 'Resolution', 300);
+            [comparisonPrefix safeLabel '_figure.png']), 'Resolution', 300);
         savefig(fig, fullfile(outputDir, ...
-            ['gait_cycle_' safeLabel '.fig']));
+            [comparisonPrefix safeLabel '_figure.fig']));
         if closeAfterSaving, close(fig); end
     end
 end
 
-fprintf('\nFinished. Comparison figures were saved in:\n%s\n', outputDir);
+directJSON(fullfile(outputDir,[comparisonPrefix 'Comparison_provenance.json']), ...
+    struct('SourceFiles',{{sessionData.File}},'Day',experiment_day, ...
+    'RunFilter',runFilter,'PipelineVersion','1.1.0'));
+fprintf('\nFinal comparison figures: %s\n',outputDir);
 
 %% ----------------------------- FUNCTIONS -------------------------------
 function [labels, gaitPct, meanProfiles, stdProfiles, isNormalized] = ...
@@ -334,7 +352,7 @@ end
 
 function sessionName = getSessionName(filePath)
     normalizedPath = strrep(char(filePath), '\', '/');
-    tokens = regexp(normalizedPath, '(?i)(ses-[^/]+)', 'tokens');
+    tokens = regexp(normalizedPath, '(?i)/(ses-[^/]+)/', 'tokens');
     if ~isempty(tokens)
         sessionName = string(tokens{end}{1});
         return;
@@ -408,4 +426,28 @@ function hideAxesToolbars(fig)
         end
     end
     drawnow;
+end
+
+function root=directDataset(container,pipeline)
+% Final destination: no staging, restoration, copying or migration.
+root = fullfile(char(container), 'derivatives', char(pipeline));
+
+if ~isfolder(root)
+    mkdir(root);
+end
+
+description = struct( ...
+    'Name', ['PilotTest3 ' char(pipeline)], ...
+    'BIDSVersion', '1.11.2', ...
+    'DatasetType', 'derivative', ...
+    'GeneratedBy', {{struct('Name', char(pipeline))}});
+
+directJSON(fullfile(root, 'dataset_description.json'), description);
+end
+
+function directJSON(path,value)
+fid=fopen(path,'w','n','UTF-8');
+assert(fid>=0,'Cannot write: %s',path);
+cleaner=onCleanup(@()fclose(fid));
+fprintf(fid,'%s\n',jsonencode(value,'PrettyPrint',true));
 end

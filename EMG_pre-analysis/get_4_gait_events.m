@@ -4,24 +4,17 @@ clear;
 
 %% 1. Load Configurations
 run('config_paths.m');
+derivativesContainer = bids_root;
+assert(contains(string(data_path),'PilotTest3','IgnoreCase',true), ...
+    'PilotTest3 only: do not use this file for PilotTest2.');
+save_path=directDataset(derivativesContainer,'p3gaitevents');
 run([current_subject, '_infos.m']); 
 
 %% 2. Dynamic Session Order Setup
-d = dir(data_path);
-folderNames = {d([d.isdir]).name};
-folderNames(ismember(folderNames, {'.','..'})) = [];
-order_sessions = cell(1, 8);
-order_sessions{1} = folderNames{contains(folderNames, 'NoExoPre')};
-for k = 1:6
-    hit = folderNames(contains(folderNames, sprintf('Exo%d', k)));
-    if ~isempty(hit)
-        order_sessions{k+1} = hit{1};
-    else
-        order_sessions{k+1} = sprintf('Exo%d_Missing', k); 
-    end
-end
-order_sessions{8} = folderNames{contains(folderNames, 'NoExoPost')};
-num_sessions = length(order_sessions);
+d=dir(fullfile(data_path,'ses-*'));
+order_sessions={d([d.isdir]).name};
+order_sessions=order_sessions(~contains(lower(string(order_sessions)),{'calib','setup'}));
+num_sessions=numel(order_sessions); p3Sources={};
 
 % Force plate (GRF) channel definition
 Left_leg_indx  = [2 3 6 7];     
@@ -41,27 +34,13 @@ for s = 1:num_sessions
     fprintf('Processing [%d/%d]: %s\n', s, num_sessions, current_session);
     
     session_eeg_dir = fullfile(data_path, current_session, 'eeg');
-    xdf_files = dir(fullfile(session_eeg_dir, '*.xdf'));
-    
-    if isempty(xdf_files)
-        warning('No XDF file found. Skipping.');
-        continue;
-    end
-    
-    if ~strcmp(subject_id, 'Pilot2_2')
-        filename = ['sub-', subject_id, '_', experiment_day,'_',current_session, '_task-Default_run-', run_id,'_eeg.xdf'];
-        full_file_path = fullfile(data_path, current_session, 'eeg', filename);
-    else
-        filename = ['sub-', subject_id, '_', current_session, '_task-Default_run-', run_id,'_eeg.xdf'];
-        full_file_path = fullfile(data_path, current_session, 'eeg', filename);
-    end
-    
-    % Check if the specific concatenated file exists to prevent `load_xdf` from throwing an error due to a missing file
-    if ~exist(full_file_path, 'file')
-        warning('Expected XDF file not found: %s. Skipping.', full_file_path);
-        continue;
-    end
-    
+    xdf_files=dir(fullfile(session_eeg_dir,sprintf('*run-%s*_eeg.xdf',run_id)));
+    xdf_files=xdf_files(~contains(lower(string({xdf_files.name})),'old'));
+    if isempty(xdf_files), warning('No selected run in %s',session_eeg_dir); continue; end
+    assert(isscalar(xdf_files),'Ambiguous XDF run in %s',session_eeg_dir);
+    filename=xdf_files(1).name;
+    full_file_path=fullfile(xdf_files(1).folder,filename);
+
     fprintf('>> Loading target XDF file: %s...\n', filename);
     
     % Load XDF streams 
@@ -223,15 +202,38 @@ for s = 1:num_sessions
     all_events = all_events(sort_order);
     
     % DYNAMIC SAVE PATH
-    save_dir = fullfile( ...
-    data_root, subject_folder, experiment_day, 'processed_EMG');
+    identity=directIdentity(full_file_path,struct('fallbackDay',experiment_day));
+    sessionRoot=fullfile(save_path,['sub-' identity.Subject],['ses-' identity.Session]);
+    save_dir=fullfile(sessionRoot,'emg');
+    figureDir=fullfile(sessionRoot,'figures');
+    if ~isfolder(figureDir), mkdir(figureDir); end
     
     if ~exist(save_dir, 'dir')
         mkdir(save_dir);
     end
     
-    save_name = fullfile(save_dir, sprintf('%s_run-%s_gait_events.mat', current_session, run_id));
-    save(save_name, 'all_events'); 
+    p3Base=identity.Prefix;
+    save_name=fullfile(save_dir,[p3Base '_desc-gait_events.mat']);
+    p3EventOrigin=double(GRF.time_stamps(1));
+    p3EventReference='First sample of the source GRF stream, shared XDF clock; not EMG sample zero';
+    save(save_name,'all_events','p3EventOrigin','p3EventReference');
+    onset=double([all_events.time]')-p3EventOrigin;
+    duration=zeros(size(onset)); trial_type=string({all_events.type})';
+    lsl_time=double([all_events.time]');
+    writeDerivativeTable(table(onset,duration,trial_type,lsl_time), ...
+        fullfile(save_dir,[p3Base '_desc-gait_events.tsv']));
+    directJSON(fullfile(save_dir,[p3Base '_desc-gait_events.json']), ...
+        struct('SourceFiles',{{full_file_path}},'TimeReference',p3EventReference, ...
+        'ReferenceXDFSeconds',p3EventOrigin,'Identity',identity, ...
+        'onset',struct('Description','Seconds relative to first source GRF sample','Units','s'), ...
+        'duration',struct('Description','Instantaneous gait event','Units','s'), ...
+        'trial_type',struct('Description','Gait event type'), ...
+        'lsl_time',struct('Description','Absolute shared XDF timestamp','Units','s')));
+    p3Sources{end+1}=full_file_path;
+    p3Figures=findall(groot,'Type','figure');
+    for p3f=1:numel(p3Figures)
+        exportgraphics(p3Figures(p3f),fullfile(figureDir,sprintf('%s_desc-gaitDiagnostic%02d_figure.png',p3Base,p3f)),'Resolution',150);
+    end 
     fprintf('>> Saved %d combined events to: %s\n', length(all_events), save_name);
     
     % Wait for user to check your function's plots before closing and moving to next
@@ -240,7 +242,7 @@ for s = 1:num_sessions
     close all; % Close the generated image and proceed to the next session
 end
 
-fprintf('\nAll sessions processed! Gait events saved in the processed_EMG folder.\n');
+fprintf('Final gait events output: %s\n',save_path);
 
 function labels = flattenMarkerLabels(timeSeries)
     labels = strings(numel(timeSeries), 1);
@@ -346,4 +348,55 @@ function [startIndex, endIndex] = findNonStandingMarkerPair(labels, times)
         endIndex   = matchingEnds(firstEnd);
         return;
     end
+end
+
+function root=directDataset(container,pipeline)
+% Final destination: no staging, restoration, copying or migration.
+root=fullfile(char(container),'derivatives',char(pipeline));
+if ~isfolder(root), mkdir(root); end
+description=struct('Name',['PilotTest3 ' pipeline], ...
+    'BIDSVersion','1.11.2','DatasetType','derivative', ...
+    'GeneratedBy',{{struct('Name',pipeline)}});
+directJSON(fullfile(root,'dataset_description.json'),description);
+end
+
+function directJSON(path,value)
+fid=fopen(path,'w','n','UTF-8');
+assert(fid>=0,'Cannot write: %s',path);
+cleaner=onCleanup(@()fclose(fid));
+fprintf(fid,'%s\n',jsonencode(value,'PrettyPrint',true));
+end
+
+function id=directIdentity(source,cfg)
+% Reversible source-label mapping is written into every export manifest.
+source=char(source); [~,name,~]=fileparts(strrep(source,'\','/'));
+s=regexp(name,'sub-(.*?)_ses-','tokens','once');
+c=regexp(name,'_ses-(.*?)_task-','tokens','once');
+r=regexp(name,'_run-(\d+)(?:_|$)','tokens','once');
+t=regexp(name,'_task-([A-Za-z0-9]+)','tokens','once');
+assert(~isempty(s)&&~isempty(c)&&~isempty(r),'Cannot identify source: %s',source);
+sub=s{1};
+assert(~isempty(regexp(sub,'^(?:Pilot3_\d+|Pilot3\d+|P3_\d+)$','once')), ...
+    'PilotTest3 source required, got subject %s. PilotTest2 is excluded.',sub);
+d=regexp(strrep(source,'\','/'),'(?:^|/)(day\d+)(?:/|$)','tokens','once');
+if isempty(d)
+    d=regexp(c{1},'^(day\d+)(?=[A-Z])','tokens','once');
+end
+if isempty(d)
+    assert(isfield(cfg,'fallbackDay')&&~isempty(cfg.fallbackDay), ...
+        'Experiment day missing from source path. Set cfg.fallbackDay explicitly: %s',source);
+    day=char(cfg.fallbackDay);
+else, day=d{1}; 
+end
+assert(~isempty(regexp(day,'^day\d+$','once')),'Day must be day1, day2, etc.');
+condition=regexprep(c{1},['^' day],'');
+if isempty(t), task='Default'; else, task=t{1}; end
+id=struct('OriginalSubject',sub,'Subject',regexprep(sub,'[^A-Za-z0-9]',''), ...
+    'Day',day,'OriginalSession',condition,'Session',[day regexprep(condition,'[^A-Za-z0-9]','')], ...
+    'Task',task,'Run',sprintf('%03d',str2double(r{1})), 'SourceFile',source);
+id.Prefix=sprintf('sub-%s_ses-%s_task-%s_run-%s',id.Subject,id.Session,id.Task,id.Run);
+end
+
+function writeDerivativeTable(T,path,varargin)
+writetable(T,path,'FileType','text','Delimiter','\t',varargin{:});
 end
