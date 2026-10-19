@@ -120,7 +120,7 @@ PREFERRED_CHANNEL = 20        # Radio channel. 20 = 2450 MHz, the gap between
                               # WiFi channels 6 and 11, full TX power (manual
                               # sec. 6.6.2 suggests 11/15/20/25; 25 sits at the
                               # band edge, where TX power is cut - short range).
-TARGET_RATE_HZ    = 60        # MUST be a legal Awinda rate (checked at connect
+TARGET_RATE_HZ    = 40        # MUST be a legal Awinda rate (checked at connect
                               # against the station's own list). Keep it BELOW
                               # the maximum for your MTw count (7 MTw -> max 100,
                               # manual Table 1): at the maximum there are no
