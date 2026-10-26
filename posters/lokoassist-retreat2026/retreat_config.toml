@@ -1,0 +1,25 @@
+# Settings for the LokoAssist Retreat 2026 poster figures.
+# Relative paths are resolved against the folder that holds this file.
+
+[paths]
+# The ICNR 2026 figure package: its code (hipexo_figs), config.toml and metabolic data are reused as they are.
+icnr_package = "../ICNR poster preparation/icnr2026_figures"
+# Questionnaire exports are read straight from the pilot folders (all participants and days),
+# not from the ICNR copy, which lacks P3_4 day 2.
+questionnaire_dir  = "../../Pilots/PilotTest3"
+questionnaire_glob = "postcond_*.csv"
+output_dir   = "output"
+
+[q5]
+out_name   = "Q5_retreat_judgement_drivers"
+background = "#FFFFFF"            # the retreat poster is white (the ICNR poster was cream)
+size_cm    = [33.6, 16.5]         # printed size on the A0 poster; the Current Status column is ~33.6 cm wide
+font_pt    = 18
+x_label    = "Correlation with how pleasant the walk felt"
+# "No discomfort" counts as intensity 0 (the intensity item is only asked after "yes"),
+# as in the final ICNR version of this figure.
+discomfort_none_as_zero = true
+# Unit the ratings are centred on before correlating:
+#   "participant_day" - each participant's day is its own set, so day-to-day shifts are removed
+#   "participant"     - as in the ICNR figure (both days of a participant pooled)
+centre_per = "participant_day"
